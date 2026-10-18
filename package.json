@@ -13,7 +13,6 @@
     "db:migrate": "npm run db:migrate -w @pms/api",
     "db:seed": "npm run db:seed -w @pms/api",
     "typecheck": "npm run build -w @pms/shared && npm run typecheck -w @pms/api && npm run typecheck -w @pms/web",
-    "test": "npm run test -w @pms/shared && npm run test -w @pms/api",
-    "lint": "npm run lint -w @pms/web"
+    "test": "npm run test -w @pms/shared && npm run test -w @pms/api"
   }
 }

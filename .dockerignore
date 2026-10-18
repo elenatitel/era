@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/dist-test
+**/.next
+**/.env
+**/.env.*
+!**/.env.example
+**/.pg-dev
+.git

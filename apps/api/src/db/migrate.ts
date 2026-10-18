@@ -1,4 +1,4 @@
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -33,7 +33,7 @@ export async function runMigrations(
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const owner = process.env.DATABASE_MIGRATION_URL ?? process.env.DATABASE_URL;
   if (!owner) throw new Error('DATABASE_MIGRATION_URL or DATABASE_URL is required');
   await runMigrations(owner, process.env.DATABASE_URL);

@@ -1,0 +1,9 @@
+{
+  "name": "HotelPMS",
+  "short_name": "HotelPMS",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#f7f8fa",
+  "theme_color": "#e8552d",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

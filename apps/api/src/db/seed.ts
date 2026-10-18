@@ -4,6 +4,7 @@
  *   npm run db:seed -- --demo       -> also creates a demo organization (refused in production)
  */
 import { randomBytes } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { eq, sql } from 'drizzle-orm';
 import { addDays, todayIn } from '@pms/shared';
 import { config } from '../config.js';
@@ -160,7 +161,7 @@ export async function seedDemo(db: DbService, password: string) {
   return { skipped: false as const, users: people.map((p) => p[1]) };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const db = new DbService();
   try {
     const c = config();
