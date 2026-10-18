@@ -1,0 +1,19 @@
+{
+  "name": "hotel-pms",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Multi-tenant hotel property management SaaS",
+  "workspaces": ["packages/*", "apps/*"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "npm run build -w @pms/shared && npm run build -w @pms/api && npm run build -w @pms/web",
+    "dev:api": "npm run dev -w @pms/api",
+    "dev:web": "npm run dev -w @pms/web",
+    "db:generate": "npm run db:generate -w @pms/api",
+    "db:migrate": "npm run db:migrate -w @pms/api",
+    "db:seed": "npm run db:seed -w @pms/api",
+    "typecheck": "npm run build -w @pms/shared && npm run typecheck -w @pms/api && npm run typecheck -w @pms/web",
+    "test": "npm run test -w @pms/shared && npm run test -w @pms/api",
+    "lint": "npm run lint -w @pms/web"
+  }
+}
