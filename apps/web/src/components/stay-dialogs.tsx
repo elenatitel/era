@@ -36,7 +36,7 @@ export function CheckInDialog({ reservationId, title, onClose }: { reservationId
               <button
                 key={r.id}
                 onClick={() => setRoomId(r.id)}
-                className={`rounded-lg border p-2 text-left text-sm ${roomId === r.id ? 'border-brand-500 ring-2 ring-brand-500/20' : 'border-line hover:border-brand-300'}`}
+                className={`rounded-lg border p-2 text-left text-sm ${roomId === r.id ? 'border-focus ring-2 ring-focus/25' : 'border-line hover:border-accent'}`}
               >
                 <span className="block font-semibold">{r.number}</span>
                 <Badge tone={statusTone[r.status]}>{t(`roomStatus.${r.status}`)}</Badge>

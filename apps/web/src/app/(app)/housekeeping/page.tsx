@@ -38,10 +38,10 @@ interface BoardRoom {
 }
 
 const tile: Record<string, string> = {
-  clean: 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/50',
-  inspected: 'border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/50',
-  dirty: 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/50',
-  out_of_order: 'border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/50',
+  clean: 'border-success bg-success-soft',
+  inspected: 'border-info bg-info-soft',
+  dirty: 'border-warning bg-warning-soft',
+  out_of_order: 'border-danger bg-danger-soft',
 };
 
 function Housekeeping({ property }: { property: Property }) {
@@ -106,13 +106,13 @@ function Housekeeping({ property }: { property: Property }) {
                 <div className="min-h-8 space-y-0.5 text-xs">
                   {r.guest && (
                     <p className="flex items-center gap-1 truncate">
-                      {r.guest.segment === 'vip' ? <Crown size={12} className="text-violet-600" /> : <User size={12} />}
+                      {r.guest.segment === 'vip' ? <Crown size={12} className="text-accent" /> : <User size={12} />}
                       {r.guest.name}
-                      {r.guest.departingToday && <LogOut size={12} className="ml-auto text-amber-700" aria-label={t('housekeeping.departing')} />}
+                      {r.guest.departingToday && <LogOut size={12} className="ml-auto text-warning" aria-label={t('housekeeping.departing')} />}
                     </p>
                   )}
                   {r.arrivalToday && (
-                    <p className="flex items-center gap-1 truncate text-sky-700 dark:text-sky-300">
+                    <p className="flex items-center gap-1 truncate text-info">
                       <LogIn size={12} /> {r.arrivalToday.name}
                     </p>
                   )}

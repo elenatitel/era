@@ -141,7 +141,7 @@ export default function ReservationPage() {
           {r.guest && (
             <dl className="space-y-2 text-sm">
               <div>
-                <Link href={`/guests/${r.guest.id}`} className="font-medium text-brand-600 hover:underline">
+                <Link href={`/guests/${r.guest.id}`} className="font-medium text-accent hover:underline">
                   {r.guest.firstName} {r.guest.lastName}
                 </Link>{' '}
                 {r.guest.segment !== 'standard' && <Badge tone={statusTone[r.guest.segment]}>{t(`segments.${r.guest.segment}`)}</Badge>}
@@ -263,7 +263,7 @@ export default function ReservationPage() {
                       {t(`methods.${p.method}`)} <span className="text-xs text-muted">{p.reference}</span>
                       <span className="block text-xs text-muted">{dateTime(p.createdAt, locale)}</span>
                     </span>
-                    <span className={p.amount < 0 ? 'text-red-600' : 'font-medium'}>{m(p.amount)}</span>
+                    <span className={p.amount < 0 ? 'text-danger' : 'font-medium'}>{m(p.amount)}</span>
                   </li>
                 ))}
                 {!r.payments.length && <li className="py-1.5 text-muted">—</li>}
@@ -288,7 +288,7 @@ export default function ReservationPage() {
                 <ul className="mt-4 space-y-1 text-sm">
                   {r.invoices.map((i) => (
                     <li key={i.id} className="flex justify-between">
-                      <Link href={`/invoices/${i.id}`} className="text-brand-600 hover:underline">
+                      <Link href={`/invoices/${i.id}`} className="text-accent hover:underline">
                         {t(`invoices.${i.type}`)} {i.fullNumber}
                       </Link>
                       <Badge tone={statusTone[i.status]}>{t(`invoices.${i.status}`)}</Badge>

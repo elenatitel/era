@@ -33,12 +33,12 @@ export function Button({
       {...props}
       disabled={disabled || loading}
       className={clsx(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 disabled:cursor-not-allowed disabled:opacity-50',
+        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50',
         size === 'sm' ? 'px-2.5 py-1.5 text-xs' : 'px-4 py-2 text-sm',
-        variant === 'primary' && 'bg-brand-500 text-white shadow-sm hover:bg-brand-600',
-        variant === 'secondary' && 'border border-line bg-surface text-ink hover:bg-subtle',
+        variant === 'primary' && 'bg-brand text-on-brand shadow-sm hover:bg-brand-hover',
+        variant === 'secondary' && 'border border-line-strong bg-surface text-ink hover:bg-subtle',
         variant === 'ghost' && 'text-muted hover:bg-subtle hover:text-ink',
-        variant === 'danger' && 'bg-red-600 text-white hover:bg-red-700',
+        variant === 'danger' && 'bg-danger-fill text-on-danger hover:opacity-90',
         className,
       )}
     >
@@ -54,8 +54,8 @@ export function ButtonLink({ href, children, variant = 'primary', className }: {
       href={href}
       className={clsx(
         'inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition',
-        variant === 'primary' && 'bg-brand-500 text-white shadow-sm hover:bg-brand-600',
-        variant === 'secondary' && 'border border-line bg-surface text-ink hover:bg-subtle',
+        variant === 'primary' && 'bg-brand text-on-brand shadow-sm hover:bg-brand-hover',
+        variant === 'secondary' && 'border border-line-strong bg-surface text-ink hover:bg-subtle',
         variant === 'ghost' && 'text-muted hover:bg-subtle hover:text-ink',
         className,
       )}
@@ -66,7 +66,7 @@ export function ButtonLink({ href, children, variant = 'primary', className }: {
 }
 
 const fieldBase =
-  'w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-faint focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-subtle';
+  'w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink placeholder:text-faint focus:border-focus focus:outline-none focus:ring-2 focus:ring-focus/25 disabled:bg-subtle';
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...props }, ref) {
   return <input ref={ref} {...props} className={clsx(fieldBase, className)} />;
@@ -102,7 +102,7 @@ export function Checkbox({ label, checked, onChange, disabled }: { label: ReactN
     <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
       <input
         type="checkbox"
-        className="h-4 w-4 rounded border-line accent-brand-500"
+        className="h-4 w-4 rounded border-line accent-brand"
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
@@ -114,7 +114,7 @@ export function Checkbox({ label, checked, onChange, disabled }: { label: ReactN
 
 export function Card({ title, actions, children, className, padded = true }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; padded?: boolean }) {
   return (
-    <section className={clsx('rounded-2xl border border-line bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.04)]', className)}>
+    <section className={clsx('rounded-2xl border border-line bg-surface shadow-card', className)}>
       {(title || actions) && (
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3.5">
           {title && <h2 className="text-sm font-semibold text-ink">{title}</h2>}
@@ -139,17 +139,22 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
 }
 
 const tones: Record<string, string> = {
-  gray: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-  green: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300',
-  red: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300',
-  amber: 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
-  blue: 'bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300',
-  brand: 'bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300',
-  violet: 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300',
+  gray: 'bg-subtle text-muted',
+  green: 'bg-success-soft text-success',
+  red: 'bg-danger-soft text-danger',
+  amber: 'bg-warning-soft text-warning',
+  blue: 'bg-info-soft text-info',
+  brand: 'bg-brand-soft text-on-brand-soft',
+  violet: 'bg-brand-soft text-on-brand-soft',
 };
 
-export function Badge({ tone = 'gray', children }: { tone?: keyof typeof tones; children: ReactNode }) {
-  return <span className={clsx('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap', tones[tone])}>{children}</span>;
+export function Badge({ tone = 'gray', dot, children }: { tone?: keyof typeof tones; dot?: boolean; children: ReactNode }) {
+  return (
+    <span className={clsx('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap', tones[tone])}>
+      {dot && <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-current" />}
+      {children}
+    </span>
+  );
 }
 
 export const statusTone: Record<string, keyof typeof tones> = {
@@ -171,7 +176,7 @@ export const statusTone: Record<string, keyof typeof tones> = {
   active: 'green',
   suspended: 'red',
   disabled: 'gray',
-  vip: 'violet',
+  vip: 'brand',
   business: 'blue',
   agent: 'amber',
   standard: 'gray',
@@ -183,9 +188,9 @@ export function Table({ head, children, empty }: { head: ReactNode[]; children: 
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
+          <tr className="border-b border-line text-[11px] leading-4 font-semibold tracking-[0.08em] uppercase text-muted">
             {head.map((h, i) => (
-              <th key={i} className="px-4 py-2.5 font-medium whitespace-nowrap">
+              <th key={i} className="px-4 py-2.5 font-semibold whitespace-nowrap">
                 {h}
               </th>
             ))}
@@ -240,11 +245,11 @@ export function Alert({ tone = 'red', children }: { tone?: 'red' | 'green' | 'am
     <div
       role="alert"
       className={clsx(
-        'rounded-lg border px-3 py-2.5 text-sm',
-        tone === 'red' && 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200',
-        tone === 'green' && 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200',
-        tone === 'amber' && 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200',
-        tone === 'blue' && 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200',
+        'rounded-lg px-3 py-2.5 text-sm',
+        tone === 'red' && 'bg-danger-soft text-danger',
+        tone === 'green' && 'bg-success-soft text-success',
+        tone === 'amber' && 'bg-warning-soft text-warning',
+        tone === 'blue' && 'bg-info-soft text-info',
       )}
     >
       {children}
@@ -277,7 +282,7 @@ export function ErrorText({ error }: { error: unknown }) {
 export function Spinner() {
   return (
     <div className="flex justify-center py-12">
-      <div className="h-7 w-7 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+      <div className="h-7 w-7 animate-spin rounded-full border-2 border-focus border-t-transparent" />
     </div>
   );
 }
@@ -287,9 +292,9 @@ export function Stat({ label, value, hint, icon }: { label: string; value: React
     <div className="rounded-2xl border border-line bg-surface p-5">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted">{label}</p>
-        {icon && <div className="rounded-xl border border-line bg-subtle p-2 text-brand-500">{icon}</div>}
+        {icon && <div className="rounded-xl border border-line bg-subtle p-2 text-accent">{icon}</div>}
       </div>
-      <p className="mt-2 text-2xl font-semibold tracking-tight text-ink">{value}</p>
+      <p className="mt-2 text-2xl font-semibold tracking-tight text-ink tabular-nums">{value}</p>
       {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
     </div>
   );
@@ -306,7 +311,7 @@ export function Tabs<T extends string>({ value, onChange, items }: { value: T; o
           onClick={() => onChange(i.value)}
           className={clsx(
             '-mb-px border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap',
-            value === i.value ? 'border-brand-500 text-brand-600' : 'border-transparent text-muted hover:text-ink',
+            value === i.value ? 'border-brand text-ink' : 'border-transparent text-muted hover:text-ink',
           )}
         >
           {i.label}

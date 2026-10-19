@@ -75,7 +75,7 @@ export default function InvoicePage() {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-2">
-        <Link href="/invoices" className="text-sm text-brand-600 hover:underline">
+        <Link href="/invoices" className="text-sm text-accent hover:underline">
           ← {t('invoices.title')}
         </Link>
         <div className="flex gap-2">

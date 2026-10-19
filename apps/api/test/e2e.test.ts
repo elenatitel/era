@@ -312,7 +312,11 @@ describe('hotel operations', () => {
     assert.equal(dash.financial, null);
     assert.equal(dash.rooms.total, 17);
     const mgr = await login('manager@demo.test');
-    assert.ok((await mgr.get(`/dashboard?propertyId=${propertyId}`)).body.financial);
+    const full = (await mgr.get(`/dashboard?propertyId=${propertyId}`)).body;
+    assert.ok(full.financial);
+    assert.equal(typeof full.financial.paymentsToday.total, 'number');
+    assert.ok(Array.isArray(full.attention.roomsNotReady));
+    assert.equal(typeof full.housekeeping.total, 'number');
   });
 
   test('availability and overbooking protection under concurrency', async () => {

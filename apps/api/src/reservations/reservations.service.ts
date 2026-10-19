@@ -468,11 +468,15 @@ export class ReservationsService {
             guestName: sql<string>`${guests.firstName} || ' ' || ${guests.lastName}`,
             roomNumber: rooms.number,
             departure: reservations.departure,
+            balance: hasPermission('folio.read')
+              ? sql<number | null>`((select coalesce(sum(f.amount), 0) from ${folioItems} f where f.reservation_id = ${reservations.id} and f.voided_at is null)
+                  - (select coalesce(sum(p.amount), 0) from ${payments} p where p.reservation_id = ${reservations.id}))::bigint`
+              : sql<null>`null`,
           })
           .from(reservations)
           .innerJoin(guests, eq(guests.id, reservations.guestId))
           .leftJoin(rooms, eq(rooms.id, reservations.roomId))
-          .where(and(eq(reservations.propertyId, propertyId), lte(reservations.departure, day), inArray(reservations.status, ['checked_in'])))
+          .where(and(eq(reservations.propertyId, propertyId), or(and(lte(reservations.departure, day), eq(reservations.status, 'checked_in')), and(eq(reservations.departure, day), eq(reservations.status, 'checked_out')))))
           .orderBy(asc(rooms.number)),
         tx
           .select({

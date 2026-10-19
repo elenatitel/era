@@ -49,7 +49,7 @@ export default function InvitePage() {
       {done ? (
         <>
           <Alert tone="green">{t('auth.inviteAccepted')}</Alert>
-          <Link href="/login" className="block text-center text-sm text-brand-600 hover:underline">
+          <Link href="/login" className="block text-center text-sm text-accent hover:underline">
             {t('auth.signIn')}
           </Link>
         </>

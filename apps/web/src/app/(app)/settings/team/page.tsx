@@ -115,7 +115,7 @@ export default function TeamPage() {
             <tr key={m.id}>
               <Td>
                 <span className="font-medium">{m.name}</span>
-                {m.mfaEnabled && <ShieldCheck size={14} className="ml-1 inline text-emerald-600" aria-label="2FA" />}
+                {m.mfaEnabled && <ShieldCheck size={14} className="ml-1 inline text-success" aria-label="2FA" />}
                 <span className="block text-xs text-muted">{m.email}</span>
               </Td>
               <Td>{m.roleName}</Td>

@@ -45,7 +45,7 @@ function FrontDeskView({ property }: { property: Property }) {
   if (q.error) return <ErrorText error={q.error} />;
   const d = q.data!;
   const guestCell = (r: Row) => (
-    <Link href={`/reservations/${r.id}`} className="font-medium text-ink hover:text-brand-600">
+    <Link href={`/reservations/${r.id}`} className="font-medium text-ink hover:text-accent">
       {r.guestName}
       {r.guestSegment && r.guestSegment !== 'standard' && (
         <span className="ml-2">
@@ -101,10 +101,14 @@ function FrontDeskView({ property }: { property: Property }) {
                 <Td>{r.roomNumber ?? '—'}</Td>
                 <Td>{date(r.departure, locale)}</Td>
                 <Td className="text-right">
-                  {can('frontdesk.checkout') && (
-                    <Button size="sm" variant="secondary" onClick={() => setCheckOut(r)}>
-                      {t('frontDesk.checkOut')}
-                    </Button>
+                  {r.status === 'checked_out' ? (
+                    <Badge tone="gray">{t('dashboard.departed')}</Badge>
+                  ) : (
+                    can('frontdesk.checkout') && (
+                      <Button size="sm" variant="secondary" onClick={() => setCheckOut(r)}>
+                        {t('frontDesk.checkOut')}
+                      </Button>
+                    )
                   )}
                 </Td>
               </tr>

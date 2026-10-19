@@ -1,9 +1,9 @@
 {
-  "name": "HotelPMS",
-  "short_name": "HotelPMS",
+  "name": "era.",
+  "short_name": "era.",
   "start_url": "/dashboard",
   "display": "standalone",
-  "background_color": "#f7f8fa",
-  "theme_color": "#e8552d",
+  "background_color": "#f6f7fa",
+  "theme_color": "#2c3a5a",
   "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }

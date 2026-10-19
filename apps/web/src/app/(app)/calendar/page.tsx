@@ -19,10 +19,10 @@ interface Cal {
 
 const DAYS = 14;
 const barColor: Record<string, string> = {
-  tentative: 'bg-amber-400/90 text-amber-950',
-  confirmed: 'bg-sky-500 text-white',
-  checked_in: 'bg-emerald-500 text-white',
-  checked_out: 'bg-gray-300 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+  tentative: 'border border-dashed border-warning bg-warning-soft text-warning',
+  confirmed: 'bg-accent text-on-brand',
+  checked_in: 'bg-brand text-on-brand',
+  checked_out: 'bg-subtle text-muted',
 };
 
 function Calendar({ property }: { property: Property }) {
@@ -77,7 +77,7 @@ function Calendar({ property }: { property: Property }) {
                   key={d}
                   className={clsx(
                     'border-b border-l border-line px-1 py-2 text-center text-[11px]',
-                    d === property.businessDate ? 'bg-brand-50 font-semibold text-brand-700 dark:bg-brand-950' : [0, 6].includes(weekday(d)) ? 'bg-subtle text-muted' : 'text-muted',
+                    d === property.businessDate ? 'bg-brand-soft font-semibold text-on-brand-soft' : [0, 6].includes(weekday(d)) ? 'bg-subtle text-muted' : 'text-muted',
                   )}
                 >
                   {fmt.format(new Date(`${d}T00:00:00Z`))}
@@ -91,7 +91,7 @@ function Calendar({ property }: { property: Property }) {
                     <div className="relative border-b border-line" style={{ gridColumn: `2 / span ${DAYS}` }}>
                       <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${DAYS}, 1fr)` }}>
                         {days.map((d) => (
-                          <div key={d} className={clsx('border-l border-line', d === property.businessDate && 'bg-brand-50/50 dark:bg-brand-950/40')} />
+                          <div key={d} className={clsx('border-l border-line', d === property.businessDate && 'bg-brand-soft/60')} />
                         ))}
                       </div>
                       <div className="relative h-10">
@@ -107,7 +107,7 @@ function Calendar({ property }: { property: Property }) {
                               key={b.id}
                               href={`/reservations/${b.id}`}
                               title={`${b.guestName} · ${b.code}`}
-                              className={clsx('absolute truncate rounded-md px-2 text-xs leading-7 font-medium shadow-sm hover:brightness-95', barColor[b.status] ?? 'bg-gray-400')}
+                              className={clsx('absolute truncate rounded-sm px-2 text-xs leading-7 font-medium hover:brightness-95', barColor[b.status] ?? 'bg-subtle text-muted')}
                               style={{
                                 left: `${(left / DAYS) * 100}%`,
                                 width: `calc(${((right - left) / DAYS) * 100}% - 3px)`,

@@ -29,6 +29,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { type ReactNode, useState } from 'react';
 import type { Permission } from '@pms/shared';
 import { Alert } from '@/components/ui';
+import { Wordmark } from '@/components/wordmark';
 import { api } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { SessionProvider, useSession } from '@/lib/session';
@@ -91,13 +92,12 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     .filter((g) => g.items.length);
   return (
     <nav className="flex h-full flex-col gap-6 overflow-y-auto px-3 py-5">
-      <Link href="/dashboard" onClick={onNavigate} className="flex items-center gap-2 px-2 text-lg font-semibold">
-        <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-500 text-sm text-white">H</span>
-        {t('app.name')}
+      <Link href="/dashboard" onClick={onNavigate} className="px-2">
+        <Wordmark tagline />
       </Link>
       {groups.map((g) => (
         <div key={g.title}>
-          <p className="mb-1 px-2 text-[11px] font-semibold tracking-wider text-faint uppercase">{g.title}</p>
+          <p className="eyebrow mb-1 px-2">{g.title}</p>
           <ul className="space-y-0.5">
             {g.items.map((i) => {
               const active = pathname === i.href || pathname.startsWith(`${i.href}/`);
@@ -108,7 +108,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                     onClick={onNavigate}
                     className={clsx(
                       'flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm',
-                      active ? 'bg-brand-50 font-medium text-brand-700 dark:bg-brand-950 dark:text-brand-300' : 'text-muted hover:bg-subtle hover:text-ink',
+                      active ? 'bg-brand-soft font-semibold text-on-brand-soft' : 'text-muted hover:bg-subtle hover:text-ink',
                     )}
                   >
                     <i.icon size={17} />
@@ -174,7 +174,7 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
           {locale === 'ro' ? 'EN' : 'RO'}
         </button>
         <Link href="/profile" className="flex items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-subtle">
-          <span className="grid h-7 w-7 place-items-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
+          <span className="grid h-7 w-7 place-items-center rounded-full bg-brand text-xs font-semibold text-on-brand">
             {me.user.name
               .split(' ')
               .map((p) => p[0])

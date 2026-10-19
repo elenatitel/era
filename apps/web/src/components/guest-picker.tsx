@@ -25,7 +25,7 @@ export function GuestPicker({ value, onChange }: { value: Guest | null; onChange
           </p>
           <p className="text-xs text-muted">{[value.email, value.phone].filter(Boolean).join(' · ')}</p>
         </div>
-        <button className="text-sm text-brand-600 hover:underline" onClick={() => onChange(null)}>
+        <button className="text-sm text-accent hover:underline" onClick={() => onChange(null)}>
           {t('common.edit')}
         </button>
       </div>

@@ -6,7 +6,7 @@ import { hasPermission } from '../common/context.js';
 import { ZQuery } from '../common/zod.js';
 import { Perms } from '../auth/decorators.js';
 import { DbService } from '../db/db.service.js';
-import { folioItems, payments, reservations, rooms } from '../db/schema.js';
+import { folioItems, housekeepingTasks, payments, reservations, rooms } from '../db/schema.js';
 import { getAccessibleProperty } from '../properties/properties.module.js';
 
 const statuses = sql.join(
@@ -51,6 +51,22 @@ export class DashboardService {
              and r.status in (${statuses}) and r.arrival <= d::date and r.departure > d::date) as booked
         from generate_series(${day}::date, ${addDays(day, 13)}::date, interval '1 day') d`);
 
+      // Arrivals today whose assigned room is not ready: the front desk needs to act before guests arrive.
+      const notReady = await tx.execute<{ number: string; status: string }>(sql`
+        select rm.number, rm.status from ${reservations} r join ${rooms} rm on rm.id = r.room_id
+        where r.property_id = ${propertyId} and r.arrival = ${day}
+          and r.status in ('tentative','confirmed') and rm.status in ('dirty','out_of_order')
+        order by rm.number`);
+
+      const [hk] = (
+        await tx.execute<{ total: number; done: number; in_progress: number; unassigned: number }>(sql`
+        select count(*)::int as total,
+          count(*) filter (where status in ('done','inspected'))::int as done,
+          count(*) filter (where status = 'in_progress')::int as in_progress,
+          count(*) filter (where status = 'pending' and assigned_to_user_id is null)::int as unassigned
+        from ${housekeepingTasks} where property_id = ${propertyId} and date = ${day} and status <> 'cancelled'`)
+      ).rows;
+
       let financial = null;
       if (hasPermission('reports.read')) {
         const [rev] = (
@@ -71,6 +87,12 @@ export class DashboardService {
           ), 0)::bigint as balance
           from ${reservations} r where r.property_id = ${propertyId} and r.status = 'checked_in'`)
         ).rows;
+        const paidToday = await tx.execute<{ method: string; total: number }>(sql`
+          select method, sum(amount)::bigint as total from ${payments}
+          where property_id = ${propertyId}
+            and created_at >= (${day}::date)::timestamp at time zone ${property.timezone}
+            and created_at < ((${day}::date + 1))::timestamp at time zone ${property.timezone}
+          group by method order by 2 desc`);
         const daysElapsed = Number(day.slice(8, 10));
         const roomMtd = Number(rev?.room_mtd ?? 0);
         const nightsMtd = Number(rev?.nights_mtd ?? 0);
@@ -80,6 +102,10 @@ export class DashboardService {
           adr: nightsMtd ? Math.round(roomMtd / nightsMtd) : 0,
           revpar: sellable ? Math.round(roomMtd / (sellable * daysElapsed)) : 0,
           openBalance: Number(open?.balance ?? 0),
+          paymentsToday: {
+            total: paidToday.rows.reduce((sum, r) => sum + Number(r.total), 0),
+            byMethod: paidToday.rows.map((r) => ({ method: r.method, total: Number(r.total) })),
+          },
         };
       }
 
@@ -91,6 +117,8 @@ export class DashboardService {
         arrivals: { expected: counts?.arrivals ?? 0, arrived: counts?.arrived ?? 0 },
         departures: { expected: counts?.departures ?? 0, departed: counts?.departed ?? 0 },
         forecast: forecast.rows.map((f) => ({ date: f.date, booked: f.booked, percent: sellable ? Math.round((f.booked / sellable) * 100) : 0 })),
+        attention: { roomsNotReady: notReady.rows.map((r) => ({ number: r.number, status: r.status })) },
+        housekeeping: { total: hk?.total ?? 0, done: hk?.done ?? 0, inProgress: hk?.in_progress ?? 0, unassigned: hk?.unassigned ?? 0 },
         financial,
       };
     });

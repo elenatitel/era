@@ -56,7 +56,7 @@ function Payments({ property }: { property: Property }) {
                       {p.guestName ?? '—'} <span className="text-xs text-muted">{p.reservationCode}</span>
                     </Td>
                     <Td className="text-muted">{p.reference ?? '—'}</Td>
-                    <Td className={p.amount < 0 ? 'text-right text-red-600' : 'text-right font-medium'}>{m(p.amount)}</Td>
+                    <Td className={p.amount < 0 ? 'text-right text-danger' : 'text-right font-medium'}>{m(p.amount)}</Td>
                   </tr>
                 ))}
               </Table>

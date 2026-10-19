@@ -105,7 +105,7 @@ function RangeForm({ property, types, plans, onDone }: { property: Property; typ
                 type="button"
                 key={d}
                 onClick={() => setF({ ...f, weekdays: on ? f.weekdays.filter((x) => x !== d) : [...f.weekdays, d] })}
-                className={clsx('rounded-md border px-2.5 py-1 text-xs', on ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-line text-muted')}
+                className={clsx('rounded-md border px-2.5 py-1 text-xs', on ? 'border-focus bg-brand-soft text-on-brand-soft' : 'border-line text-muted')}
               >
                 {fmt.format(new Date(Date.UTC(2024, 0, 7 + d)))}
               </button>
@@ -187,9 +187,9 @@ function Rates({ property }: { property: Property }) {
                     const o = grid.data!.overrides.find((x) => x.roomTypeId === rt.id && x.ratePlanId === null && x.date === d);
                     const specific = grid.data!.overrides.some((x) => x.roomTypeId === rt.id && x.ratePlanId !== null && x.date === d);
                     return (
-                      <td key={d} className={clsx('px-1 py-2 text-center', o?.closed && 'bg-red-50 text-red-700 line-through dark:bg-red-950', o?.price != null && 'font-semibold text-brand-700')}>
+                      <td key={d} className={clsx('px-1 py-2 text-center', o?.closed && 'bg-danger-soft text-danger line-through', o?.price != null && 'font-semibold text-on-brand-soft')}>
                         {money(o?.price ?? rt.baseRate, property.currency, locale).replace(/\s?[A-Z]{3}$|^[A-Z]{3}\s?/, '')}
-                        {specific && <span className="text-brand-500">*</span>}
+                        {specific && <span className="text-accent">*</span>}
                       </td>
                     );
                   })}

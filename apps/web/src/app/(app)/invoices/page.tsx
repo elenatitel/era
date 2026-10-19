@@ -42,7 +42,7 @@ function Invoices({ property }: { property: Property }) {
               {list.data?.items.map((i) => (
                 <tr key={i.id} className="hover:bg-subtle">
                   <Td>
-                    <Link href={`/invoices/${i.id}`} className="font-mono text-xs font-semibold text-brand-600 hover:underline">
+                    <Link href={`/invoices/${i.id}`} className="font-mono text-xs font-semibold text-accent hover:underline">
                       {i.fullNumber}
                     </Link>
                   </Td>

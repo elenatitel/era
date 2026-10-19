@@ -98,7 +98,7 @@ export default function GuestPage() {
             {g.history.map((h) => (
               <tr key={h.id}>
                 <Td>
-                  <Link href={`/reservations/${h.id}`} className="font-mono text-xs text-brand-600 hover:underline">
+                  <Link href={`/reservations/${h.id}`} className="font-mono text-xs text-accent hover:underline">
                     {h.code}
                   </Link>
                 </Td>

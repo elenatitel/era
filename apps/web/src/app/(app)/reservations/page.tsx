@@ -81,12 +81,12 @@ function List({ property }: { property: Property }) {
               {list.data?.items.map((r) => (
                 <tr key={r.id} className="hover:bg-subtle">
                   <Td>
-                    <Link href={`/reservations/${r.id}`} className="font-mono text-xs font-semibold text-brand-600 hover:underline">
+                    <Link href={`/reservations/${r.id}`} className="font-mono text-xs font-semibold text-accent hover:underline">
                       {r.code}
                     </Link>
                   </Td>
                   <Td>
-                    <Link href={`/reservations/${r.id}`} className="hover:text-brand-600">
+                    <Link href={`/reservations/${r.id}`} className="hover:text-accent">
                       {r.guestName}
                     </Link>
                   </Td>

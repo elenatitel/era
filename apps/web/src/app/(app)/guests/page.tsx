@@ -64,7 +64,7 @@ export default function GuestsPage() {
               {list.data?.items.map((g) => (
                 <tr key={g.id} className="hover:bg-subtle">
                   <Td>
-                    <Link href={`/guests/${g.id}`} className="font-medium hover:text-brand-600">
+                    <Link href={`/guests/${g.id}`} className="font-medium hover:text-accent">
                       {g.lastName} {g.firstName}
                     </Link>
                   </Td>

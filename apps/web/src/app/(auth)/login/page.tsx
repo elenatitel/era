@@ -52,7 +52,7 @@ function LoginForm() {
   return (
     <form onSubmit={submit} className="space-y-5">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{mfaToken ? t('auth.mfaTitle') : t('auth.welcome')}</h1>
+        <h1 className="font-display text-[32px] leading-[38px] font-medium">{mfaToken ? t('auth.mfaTitle') : t('auth.welcome')}</h1>
         <p className="mt-1 text-sm text-muted">{mfaToken ? t('auth.mfaHint') : t('auth.signInHint')}</p>
       </div>
       <ErrorText error={error} />
@@ -88,7 +88,7 @@ function LoginForm() {
         {mfaToken ? t('auth.verify') : t('auth.signIn')}
       </Button>
       <p className="text-center text-sm">
-        <Link href="/forgot-password" className="text-brand-600 hover:underline">
+        <Link href="/forgot-password" className="text-accent hover:underline">
           {t('auth.forgot')}
         </Link>
       </p>

@@ -45,9 +45,9 @@ export default function SelectOrganizationPage() {
             <button
               onClick={() => choose(m.tenantId)}
               disabled={m.status !== 'active'}
-              className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface p-4 text-left hover:border-brand-300 disabled:opacity-50"
+              className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface p-4 text-left hover:border-accent disabled:opacity-50"
             >
-              <span className="rounded-lg bg-brand-50 p-2 text-brand-600">
+              <span className="rounded-lg bg-brand-soft p-2 text-accent">
                 <Building2 size={18} />
               </span>
               <span className="flex-1">
@@ -62,11 +62,11 @@ export default function SelectOrganizationPage() {
         ))}
       </ul>
       <div className="flex justify-between text-sm">
-        <Link href="/profile" className="text-brand-600 hover:underline">
+        <Link href="/profile" className="text-accent hover:underline">
           {t('nav.profile')}
         </Link>
         {me.data.user.isPlatformAdmin && (
-          <Link href="/platform" className="text-brand-600 hover:underline">
+          <Link href="/platform" className="text-accent hover:underline">
             {t('nav.platform')}
           </Link>
         )}

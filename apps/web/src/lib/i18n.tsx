@@ -5,7 +5,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 export type Locale = 'ro' | 'en';
 
 const en = {
-  app: { name: 'HotelPMS', tagline: 'Property management for modern hotels' },
+  app: { name: 'era.', tagline: 'A new era of hospitality' },
   common: {
     save: 'Save', cancel: 'Cancel', create: 'Create', edit: 'Edit', delete: 'Delete', close: 'Close', search: 'Search',
     loading: 'Loading…', none: 'Nothing here yet', actions: 'Actions', status: 'Status', name: 'Name', email: 'E-mail',
@@ -44,6 +44,16 @@ const en = {
     noProperty: 'Create your first property to get started.', nightAudit: 'Run night audit',
     nightAuditConfirm: 'Close the business day {date}? Room charges will be posted and no-shows marked.',
     nightAuditDone: 'Business day closed. New business date: {date}.',
+    greetingMorning: 'Good morning, {name}', greetingAfternoon: 'Good afternoon, {name}', greetingEvening: 'Good evening, {name}',
+    summary: '{property} has {arrivals} arrivals, {departures} departures and {inHouse} occupied rooms today.',
+    roomsOf: '{n} of {total} rooms', waitingCheckIn: '{n} waiting for check-in', stillToLeave: '{n} still to check out',
+    forecastTitle: 'Occupancy forecast', forecastPeak: 'Peak {pct}% on {date}',
+    notReady: 'Rooms {rooms} have arrivals today and are not ready yet. Assign a ready room or prioritise cleaning in Housekeeping.',
+    openHousekeeping: 'Open housekeeping', hkTasks: 'Cleaning tasks today', hkDetail: '{inProgress} in progress · {unassigned} unassigned',
+    arrivalsToday: 'Arrivals today ({n})', departuresToday: 'Departures today ({n})', openFrontDesk: 'Front Office',
+    financeTitle: 'Financial · this month', adrLong: 'ADR · average rate per night', revparLong: 'RevPAR · revenue per available room',
+    openBalanceLong: 'Open balances (in-house guests)', paymentsToday: 'Payments today', paymentsReport: 'Payments report', noPayments: 'No payments yet today',
+    checkedIn: 'Checked in', departed: 'Departed', occupiedRoom: 'Occupied',
   },
   roomStatus: { clean: 'Clean', dirty: 'Dirty', inspected: 'Inspected', out_of_order: 'Out of order', vacant: 'Vacant', occupied: 'Occupied' },
   resStatus: { tentative: 'Tentative', confirmed: 'Confirmed', checked_in: 'In-house', checked_out: 'Checked out', cancelled: 'Cancelled', no_show: 'No-show' },
@@ -129,7 +139,7 @@ type Dict = typeof en;
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : string };
 
 const ro: DeepPartial<Dict> = {
-  app: { tagline: 'Management hotelier modern' },
+  app: { tagline: 'O nouă eră a ospitalității' },
   common: {
     save: 'Salvează', cancel: 'Anulează', create: 'Creează', edit: 'Editează', delete: 'Șterge', close: 'Închide', search: 'Caută',
     loading: 'Se încarcă…', none: 'Nimic aici încă', actions: 'Acțiuni', status: 'Stare', name: 'Nume', email: 'E-mail',
@@ -168,6 +178,16 @@ const ro: DeepPartial<Dict> = {
     noProperty: 'Creați prima proprietate pentru a începe.', nightAudit: 'Închidere de zi',
     nightAuditConfirm: 'Închideți ziua hotelieră {date}? Se vor posta tarifele de cazare și se vor marca neprezentările.',
     nightAuditDone: 'Zi închisă. Noua zi hotelieră: {date}.',
+    greetingMorning: 'Bună dimineața, {name}', greetingAfternoon: 'Bună ziua, {name}', greetingEvening: 'Bună seara, {name}',
+    summary: '{property} are azi {arrivals} sosiri, {departures} plecări și {inHouse} camere ocupate.',
+    roomsOf: '{n} din {total} camere', waitingCheckIn: '{n} așteaptă check-in', stillToLeave: '{n} încă de plecat',
+    forecastTitle: 'Ocupare prognozată', forecastPeak: 'Vârf {pct}% pe {date}',
+    notReady: 'Camerele {rooms} au sosiri azi și nu sunt încă pregătite. Alocă o cameră pregătită sau prioritizează curățenia în Housekeeping.',
+    openHousekeeping: 'Deschide housekeeping', hkTasks: 'Sarcini de curățenie azi', hkDetail: '{inProgress} în lucru · {unassigned} nealocate',
+    arrivalsToday: 'Sosiri azi ({n})', departuresToday: 'Plecări azi ({n})', openFrontDesk: 'Front Office',
+    financeTitle: 'Financiar · luna curentă', adrLong: 'ADR · tarif mediu pe noapte', revparLong: 'RevPAR · venit pe cameră disponibilă',
+    openBalanceLong: 'Solduri deschise (oaspeți cazați)', paymentsToday: 'Încasări azi', paymentsReport: 'Raport încasări', noPayments: 'Nicio încasare azi',
+    checkedIn: 'Cazat', departed: 'Plecat', occupiedRoom: 'Ocupată',
   },
   roomStatus: { clean: 'Curată', dirty: 'Murdară', inspected: 'Verificată', out_of_order: 'Indisponibilă', vacant: 'Liberă', occupied: 'Ocupată' },
   resStatus: { tentative: 'Opțională', confirmed: 'Confirmată', checked_in: 'Cazat', checked_out: 'Plecat', cancelled: 'Anulată', no_show: 'Neprezentare' },

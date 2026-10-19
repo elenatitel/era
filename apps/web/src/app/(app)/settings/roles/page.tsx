@@ -100,7 +100,7 @@ export default function RolesPage() {
                 <h3 className="font-semibold">{r.name}</h3>
                 <p className="text-xs text-muted">{r.description}</p>
               </div>
-              {r.system ? <Badge tone="violet"><Lock size={10} className="mr-1" />{t('settings.system')}</Badge> : null}
+              {r.system ? <Badge tone="brand"><Lock size={10} className="mr-1" />{t('settings.system')}</Badge> : null}
             </div>
             <p className="mt-3 text-xs text-muted">
               {r.permissions.length} {t('settings.permissions').toLowerCase()} · {r.members} {t('settings.members')}
