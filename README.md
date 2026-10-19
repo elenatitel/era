@@ -22,12 +22,14 @@ role-based permissions, two-factor authentication and GDPR tooling. UI in Romani
 | **Housekeeping** | Live room board, daily task generation, assignment, start / done / inspect workflow, out-of-order, mobile-first task view |
 | **Guests & CRM** | Profiles with segments (VIP, business, agent), companies & agencies, stay history and lifetime value, encrypted ID documents |
 | **Financial** | Folio charges & voids, payments & refunds, invoices, proformas, credit notes (storno) with gapless numbering, payments report, dashboard KPIs (occupancy, ADR, RevPAR) |
+| **Booking engine** | Public booking page per hotel (`/book/<address>`): live availability and prices, guest details, card payment with Stripe (Payment Element, Apple Pay / Google Pay); rooms are held for 30 minutes until payment, confirmed by signed webhook |
+| **Guest portal** | Private link per booking (no account): stay summary, balance, online check-in with ID details for every guest, protected by a 6-digit e-mail code; reception sees check-in, arrival time and requests |
 | **Mobile** | Responsive UI + installable PWA manifest; housekeeping designed for phones |
 | **Administration** | Team invitations, custom roles, per-property access, audit log, organization 2FA policy, platform super-admin |
 
 ### Roadmap (next phases)
 
-Revenue management automation · Booking engine for the hotel website · Guest self check-in & mobile ordering ·
+Revenue management automation · In-stay mobile ordering and requests · Express check-out ·
 Loyalty programs · Event & conference management · Restaurant POS · Upselling · Channel manager / OTA integrations ·
 Romanian e-Factura (ANAF) · SaaS subscription billing.
 
@@ -136,6 +138,8 @@ housekeeping permissions and GDPR erasure.
    ```
 
 5. Sign in at `https://DOMAIN`, enable 2FA, open **Platform → New organization**. The hotel owner receives an invitation e-mail.
+
+**Online booking with Stripe:** each hotel uses its own Stripe account. In **Settings → Online booking**, set the web address, paste the publishable and secret keys, add the shown webhook endpoint in Stripe (event `payment_intent.succeeded`) and paste its signing secret. Without keys, online bookings are confirmed at once and paid at the hotel.
 
 **Operations checklist:** schedule `pg_dump` backups of the `pgdata` volume off-site and test restores;
 keep `ENCRYPTION_KEY` in a secret manager (losing it makes encrypted ID numbers and 2FA secrets unreadable);

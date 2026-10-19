@@ -337,3 +337,87 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateReservationInput = z.infer<typeof createReservationSchema>;
 export type GuestInput = z.infer<typeof guestSchema>;
 export type PropertyInput = z.infer<typeof propertySchema>;
+
+// ---------- guest journey (public booking engine, guest portal) ----------
+export const bookingSiteSchema = z.object({
+  slug,
+  enabled: z.boolean(),
+  stripePublishableKey: z
+    .string()
+    .trim()
+    .regex(/^pk_(test|live)_[A-Za-z0-9]+$/, 'Use the publishable key from Stripe (pk_test_… or pk_live_…)')
+    .nullable()
+    .optional(),
+  /** Write-only: omit to keep the stored value, null to remove it. */
+  stripeSecretKey: z
+    .string()
+    .trim()
+    .regex(/^(sk|rk)_(test|live)_[A-Za-z0-9]+$/, 'Use a secret or restricted key from Stripe (sk_… or rk_…)')
+    .nullable()
+    .optional(),
+  stripeWebhookSecret: z
+    .string()
+    .trim()
+    .regex(/^whsec_[A-Za-z0-9]+$/, 'Use the webhook signing secret from Stripe (whsec_…)')
+    .nullable()
+    .optional(),
+});
+
+export const publicAvailabilitySchema = z
+  .object({
+    arrival: isoDate,
+    departure: isoDate,
+    adults: z.coerce.number().int().min(1).max(20).default(2),
+    children: z.coerce.number().int().min(0).max(20).default(0),
+  })
+  .refine((v) => v.departure > v.arrival, { message: 'Departure must be after arrival', path: ['departure'] });
+
+export const publicBookingSchema = z
+  .object({
+    roomTypeId: id,
+    ratePlanId: id,
+    arrival: isoDate,
+    departure: isoDate,
+    adults: z.int().min(1).max(20),
+    children: z.int().min(0).max(20).default(0),
+    guest: z.object({
+      firstName: trimmed(80),
+      lastName: trimmed(80),
+      email,
+      phone: optionalText(40),
+    }),
+    estimatedArrival: optionalText(40),
+    requests: optionalText(1000),
+    acceptTerms: z.literal(true, { error: 'Please accept the booking terms' }),
+    locale: z.enum(LOCALES).default('en'),
+  })
+  .refine((v) => v.departure > v.arrival, { message: 'Departure must be after arrival', path: ['departure'] });
+
+export const guestCodeSchema = z.object({ code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code') });
+
+const travellerDocument = {
+  birthDate: isoDate.optional().nullable(),
+  nationality: z.string().length(2).toUpperCase().optional().nullable(),
+  documentType: z.enum(DOCUMENT_TYPES).optional().nullable(),
+  documentNumber: optionalText(40),
+};
+
+export const onlineCheckinSchema = z.object({
+  mainGuest: z.object({
+    ...travellerDocument,
+    birthDate: isoDate,
+    nationality: z.string().length(2).toUpperCase(),
+    documentType: z.enum(DOCUMENT_TYPES),
+    documentNumber: trimmed(40),
+    address: optionalText(300),
+    country: z.string().length(2).toUpperCase().optional().nullable(),
+  }),
+  companions: z
+    .array(z.object({ firstName: trimmed(80), lastName: trimmed(80), ...travellerDocument }))
+    .max(19)
+    .default([]),
+  estimatedArrival: optionalText(40),
+  requests: optionalText(1000),
+  marketingConsent: z.boolean().default(false),
+  confirm: z.literal(true, { error: 'Please confirm that the details are correct' }),
+});

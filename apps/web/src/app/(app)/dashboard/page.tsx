@@ -44,6 +44,7 @@ interface StayRow {
   roomStatus?: string | null;
   roomTypeCode?: string;
   balance?: number | null;
+  onlineCheckinAt?: string | null;
 }
 interface FrontDesk {
   arrivals: StayRow[];
@@ -397,6 +398,13 @@ function StayTable({ rows, head, cells }: { rows: StayRow[]; head: string[]; cel
                       )}
                     </span>
                     <span className="code">{r.code}</span>
+                    {r.onlineCheckinAt && r.status !== 'checked_in' && r.status !== 'checked_out' && (
+                      <span className="mt-1">
+                        <Badge tone="green" dot>
+                          {t('online.checkedInOnline')}
+                        </Badge>
+                      </span>
+                    )}
                   </Link>
                 </td>
                 {c.map((cell, i) => (

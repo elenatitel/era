@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@pms/shared": "1.0.0",
+    "@stripe/react-stripe-js": "^7.0.0",
+    "@stripe/stripe-js": "^10.0.0",
     "@tanstack/react-query": "^5.104.4",
     "clsx": "^2.1.1",
     "lucide-react": "^1.59.0",

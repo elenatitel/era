@@ -141,6 +141,46 @@ export const securityEvents = pgTable(
   (t) => [index().on(t.userId, t.createdAt), index().on(t.createdAt)],
 );
 
+/**
+ * Public booking sites: the only routing data a public request needs to find its tenant.
+ * Global (no RLS) by design; holds no secrets and no guest data.
+ */
+export const bookingSites = pgTable(
+  'booking_sites',
+  {
+    id: pk(),
+    tenantId: tenantId(),
+    propertyId: uuid().notNull().unique(),
+    slug: text().notNull().unique(),
+    enabled: boolean().notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.tenantId)],
+);
+
+/**
+ * Private guest links ("secure link, no account"). Looked up by token hash before a tenant
+ * is known, so global; the e-mail code that unlocks changes is stored hashed here too.
+ */
+export const guestLinks = pgTable(
+  'guest_links',
+  {
+    id: pk(),
+    tenantId: tenantId(),
+    reservationId: uuid().notNull().unique(),
+    tokenHash: text().notNull().unique(),
+    /** Encrypted copy so the same link can be e-mailed again (e.g. when a webhook confirms payment). */
+    tokenEnc: text().notNull(),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    codeHash: text(),
+    codeExpiresAt: timestamp({ withTimezone: true }),
+    codeAttempts: integer().notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.tenantId)],
+);
+
 // ============================================================ tenant-owned
 
 export const roles = pgTable(
@@ -213,6 +253,10 @@ export const properties = pgTable('properties', {
   checkOutTime: text().notNull().default('12:00'),
   accommodationVatRate: integer().notNull().default(1100),
   standardVatRate: integer().notNull().default(2100),
+  /** Online payments: the hotel's own Stripe account. Secrets are AES-256-GCM encrypted. */
+  stripePublishableKey: text(),
+  stripeSecretKeyEnc: text(),
+  stripeWebhookSecretEnc: text(),
   /** Hotel business date; advanced by the night audit. */
   businessDate: date().notNull().default(sql`CURRENT_DATE`),
   createdAt: createdAt(),
@@ -404,6 +448,13 @@ export const reservations = pgTable(
     nightlyRates: jsonb().$type<NightlyRate[]>().notNull().default([]),
     externalRef: text(),
     notes: text(),
+    /** Online bookings awaiting payment hold their room until this time. */
+    holdExpiresAt: timestamp({ withTimezone: true }),
+    stripePaymentIntentId: text(),
+    guestLocale: text().notNull().default('en'),
+    estimatedArrival: text(),
+    guestRequests: text(),
+    onlineCheckinAt: timestamp({ withTimezone: true }),
     cancelReason: text(),
     cancelledAt: timestamp({ withTimezone: true }),
     checkedInAt: timestamp({ withTimezone: true }),
@@ -419,6 +470,26 @@ export const reservations = pgTable(
     index().on(t.roomTypeId, t.arrival, t.departure),
     index().on(t.guestId),
   ],
+);
+
+/** Companions registered for a stay (online check-in or front desk). */
+export const reservationGuests = pgTable(
+  'reservation_guests',
+  {
+    id: pk(),
+    tenantId: tenantId(),
+    reservationId: uuid()
+      .notNull()
+      .references(() => reservations.id, { onDelete: 'cascade' }),
+    firstName: text().notNull(),
+    lastName: text().notNull(),
+    birthDate: date(),
+    nationality: text(),
+    documentType: text(),
+    documentNumberEnc: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.reservationId)],
 );
 
 export const folioItems = pgTable(
@@ -588,6 +659,7 @@ export const TENANT_TABLES = [
   'companies',
   'guests',
   'reservations',
+  'reservation_guests',
   'folio_items',
   'payments',
   'invoices',

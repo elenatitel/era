@@ -16,6 +16,8 @@ export async function createApp() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: LEVELS.slice(0, LEVELS.indexOf(c.LOG_LEVEL) + 1),
     bodyParser: false,
+    // Keep the raw body for Stripe webhook signature checks (req.rawBody).
+    rawBody: true,
   });
   app.set('trust proxy', c.TRUST_PROXY);
   app.disable('x-powered-by');

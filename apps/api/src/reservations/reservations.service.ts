@@ -25,6 +25,7 @@ import {
   invoices,
   payments,
   properties,
+  reservationGuests,
   ratePlans,
   reservations,
   rooms,
@@ -33,6 +34,7 @@ import {
 } from '../db/schema.js';
 import { folioTotals, postRoomCharges } from '../finance/folio.js';
 import { assertCompany, insertGuest, presentGuest } from '../guests/guests.module.js';
+import { decryptNullable, mask } from '../common/crypto.js';
 import { getAccessibleProperty } from '../properties/properties.module.js';
 import { availability, freeRooms, minFree, quote } from '../properties/pricing.js';
 
@@ -297,6 +299,7 @@ export class ReservationsService {
           : [],
         hasPermission('folio.read') ? folioTotals(tx, id) : null,
       ]);
+      const companions = await tx.select().from(reservationGuests).where(eq(reservationGuests.reservationId, id));
       return {
         ...reservation,
         property: { id: property.id, name: property.name, businessDate: property.businessDate, currency: property.currency },
@@ -309,6 +312,18 @@ export class ReservationsService {
         payments: pays,
         invoices: docs,
         totals,
+        companions: companions.map((c) => {
+          const doc = decryptNullable(c.documentNumberEnc);
+          return {
+            id: c.id,
+            firstName: c.firstName,
+            lastName: c.lastName,
+            birthDate: c.birthDate,
+            nationality: c.nationality,
+            documentType: c.documentType,
+            documentNumber: hasPermission('guests.pii') ? doc : mask(doc),
+          };
+        }),
       };
     });
   }
@@ -450,6 +465,9 @@ export class ReservationsService {
           roomStatus: rooms.status,
           roomTypeCode: roomTypes.code,
           notes: reservations.notes,
+          onlineCheckinAt: reservations.onlineCheckinAt,
+          estimatedArrival: reservations.estimatedArrival,
+          source: reservations.source,
         })
         .from(reservations)
         .innerJoin(guests, eq(guests.id, reservations.guestId))

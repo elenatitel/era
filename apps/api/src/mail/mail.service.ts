@@ -6,7 +6,43 @@ type Locale = 'en' | 'ro';
 
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
+interface Booked {
+  hotel: string;
+  code: string;
+  arrival: string;
+  departure: string;
+  room: string;
+}
+
 const T = {
+  booking: {
+    en: (b: Booked) => ({
+      subject: `Your stay at ${b.hotel} is confirmed · ${b.code}`,
+      intro: `Thank you for booking ${b.hotel}. ${b.room}, ${b.arrival} to ${b.departure}. Booking code: ${b.code}.`,
+      cta: 'Check in online',
+      outro: 'Use this private link to see your booking and check in online before you arrive. Do not share it.',
+    }),
+    ro: (b: Booked) => ({
+      subject: `Rezervarea la ${b.hotel} este confirmată · ${b.code}`,
+      intro: `Vă mulțumim pentru rezervarea la ${b.hotel}. ${b.room}, ${b.arrival} – ${b.departure}. Cod rezervare: ${b.code}.`,
+      cta: 'Check-in online',
+      outro: 'Folosiți acest link privat pentru a vedea rezervarea și a face check-in online înainte de sosire. Nu îl distribuiți.',
+    }),
+  },
+  guestCode: {
+    en: (hotel: string, code: string) => ({
+      subject: `${code} is your ${hotel} code`,
+      intro: `Your code to confirm changes to your booking at ${hotel} is ${code}.`,
+      cta: '',
+      outro: 'The code expires in 10 minutes. If you did not ask for it, you can ignore this e-mail.',
+    }),
+    ro: (hotel: string, code: string) => ({
+      subject: `${code} este codul dumneavoastră ${hotel}`,
+      intro: `Codul pentru a confirma modificările rezervării la ${hotel} este ${code}.`,
+      cta: '',
+      outro: 'Codul expiră în 10 minute. Dacă nu l-ați solicitat, ignorați acest e-mail.',
+    }),
+  },
   invite: {
     ro: (org: string) => ({
       subject: `Invitație în ${org}`,
@@ -66,9 +102,17 @@ export class MailService {
     await this.send(to, T.reset[locale](), link);
   }
 
-  private async send(to: string, t: { subject: string; intro: string; cta: string; outro: string }, link: string) {
+  async sendBookingConfirmation(to: string, booked: Booked, token: string, locale: Locale) {
+    await this.send(to, T.booking[locale](booked), `${config().WEB_ORIGIN}/stay/${token}`);
+  }
+
+  async sendGuestCode(to: string, hotel: string, code: string, locale: Locale) {
+    await this.send(to, T.guestCode[locale](hotel, code), null);
+  }
+
+  private async send(to: string, t: { subject: string; intro: string; cta: string; outro: string }, link: string | null) {
     const app = config().APP_NAME;
-    const text = `${t.intro}\n\n${t.cta}: ${link}\n\n${t.outro}\n\n— ${app}`;
+    const text = link ? `${t.intro}\n\n${t.cta}: ${link}\n\n${t.outro}\n\n— ${app}` : `${t.intro}\n\n${t.outro}\n\n— ${app}`;
     // era. brand: navy ink on white, display serif wordmark with the accent dot (e-mail safe fonts).
     const html = `<div style="background:#f6f7fa;padding:32px 16px;font-family:Figtree,'Segoe UI',Arial,sans-serif;color:#1b2438">
       <div style="max-width:520px;margin:auto;background:#ffffff;border:1px solid #e6e6e6;border-radius:16px;overflow:hidden">
@@ -78,7 +122,7 @@ export class MailService {
         </div>
         <div style="padding:28px 32px">
           <p style="margin:0 0 20px;font-size:15px;line-height:22px">${escape(t.intro)}</p>
-          <p style="margin:0 0 24px"><a href="${escape(link)}" style="display:inline-block;background:#2c3a5a;color:#ffffff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">${escape(t.cta)}</a></p>
+          ${link ? `<p style="margin:0 0 24px"><a href="${escape(link)}" style="display:inline-block;background:#2c3a5a;color:#ffffff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">${escape(t.cta)}</a></p>` : ''}
           <p style="margin:0;color:#55607a;font-size:13px;line-height:19px">${escape(t.outro)}</p>
         </div>
       </div>
@@ -86,7 +130,7 @@ export class MailService {
     this.outbox.push({ to, subject: t.subject, text });
     if (this.outbox.length > 50) this.outbox.shift();
     if (!this.transport) {
-      if (!config().isProduction) this.logger.log(`[mail disabled] To: ${to} | ${t.subject} | ${link}`);
+      if (!config().isProduction) this.logger.log(`[mail disabled] To: ${to} | ${t.subject} | ${link ?? ''}`);
       else this.logger.warn(`SMTP is not configured; e-mail "${t.subject}" was not sent`);
       return;
     }

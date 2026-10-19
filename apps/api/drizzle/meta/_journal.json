@@ -22,6 +22,20 @@
       "when": 1792422796515,
       "tag": "0002_english_default",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792439625970,
+      "tag": "0003_guest_journey",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792439628818,
+      "tag": "0004_guest_journey_rls",
+      "breakpoints": true
     }
   ]
 }

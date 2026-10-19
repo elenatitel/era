@@ -181,6 +181,10 @@ export interface ReservationDetail {
   payments: Payment[];
   invoices: { id: string; fullNumber: string; type: string; status: string; total: number }[];
   totals: { charges: number; payments: number; balance: number } | null;
+  onlineCheckinAt: string | null;
+  estimatedArrival: string | null;
+  guestRequests: string | null;
+  companions: { id: string; firstName: string; lastName: string; birthDate: string | null; nationality: string | null; documentType: string | null; documentNumber: string | null }[];
 }
 
 export interface Party {

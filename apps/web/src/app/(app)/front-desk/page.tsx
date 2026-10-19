@@ -25,6 +25,8 @@ interface Row {
   departure: string;
   adults?: number;
   children?: number;
+  onlineCheckinAt?: string | null;
+  estimatedArrival?: string | null;
 }
 interface FrontDesk {
   date: string;
@@ -52,7 +54,17 @@ function FrontDeskView({ property }: { property: Property }) {
           <Badge tone={statusTone[r.guestSegment]}>{t(`segments.${r.guestSegment}`)}</Badge>
         </span>
       )}
-      <span className="block text-xs font-normal text-muted">{r.code}</span>
+      <span className="block text-xs font-normal text-muted">
+        {r.code}
+        {r.estimatedArrival && ` · ${t('online.expectedAt', { time: r.estimatedArrival })}`}
+      </span>
+      {r.onlineCheckinAt && r.status !== 'checked_in' && (
+        <span className="mt-1 inline-block">
+          <Badge tone="green" dot>
+            {t('online.checkedInOnline')}
+          </Badge>
+        </span>
+      )}
     </Link>
   );
 

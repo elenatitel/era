@@ -81,7 +81,7 @@ export default function PlatformPage() {
         <form className="space-y-3" onSubmit={(e) => (e.preventDefault(), create.mutate())}>
           <ErrorText error={create.error} />
           <Field label={t('common.name')}>{(id) => <Input id={id} required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value, slug: f.slug || slugify(e.target.value) })} />}</Field>
-          <Field label={t('platform.slug')}>{(id) => <Input id={id} required pattern="[a-z0-9][a-z0-9-]{1,46}[a-z0-9]" value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} />}</Field>
+          <Field label={t('platform.slug')}>{(id) => <Input id={id} required pattern="[a-z0-9][a-z0-9\-]{1,46}[a-z0-9]" value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} />}</Field>
           <Field label={t('platform.ownerName')}>{(id) => <Input id={id} required value={f.ownerName} onChange={(e) => setF({ ...f, ownerName: e.target.value })} />}</Field>
           <Field label={t('platform.ownerEmail')}>{(id) => <Input id={id} type="email" required value={f.ownerEmail} onChange={(e) => setF({ ...f, ownerEmail: e.target.value })} />}</Field>
           <Field label={t('settings.defaultLocale')}>

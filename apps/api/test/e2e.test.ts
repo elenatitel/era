@@ -4,16 +4,17 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import type { INestApplication } from '@nestjs/common';
 import { addDays } from '@pms/shared';
-import { Client, startDatabase } from './harness.js';
+import { Client, startDatabase, startFakeStripe } from './harness.js';
 
 const ORIGIN = 'http://localhost:3000';
 const DEMO_PASSWORD = 'Demo-password-123';
 const ADMIN = { email: 'admin@platform.test', password: 'Platform-admin-pass-1' };
 
 let db: Awaited<ReturnType<typeof startDatabase>>;
+let stripe: Awaited<ReturnType<typeof startFakeStripe>>;
 let app: INestApplication;
 let base: string;
-let mail: { outbox: { to: string; text: string }[] };
+let mail: { outbox: { to: string; subject: string; text: string }[] };
 let totpAt: (secret: string, counter: number) => string;
 
 const client = () => new Client(base, ORIGIN).init();
@@ -38,6 +39,7 @@ function freshCode(secret: string) {
 
 before(async () => {
   db = await startDatabase();
+  stripe = await startFakeStripe();
   const { runMigrations } = await import('../src/db/migrate.js');
   await runMigrations(db.ownerUrl, db.appUrl, fileURLToPath(new URL('../../drizzle', import.meta.url)));
   Object.assign(process.env, {
@@ -49,6 +51,7 @@ before(async () => {
     COOKIE_SECURE: 'false',
     LOG_LEVEL: 'error',
     TRUST_PROXY: '0',
+    STRIPE_API_BASE: stripe.base,
   });
   const { createApp } = await import('../src/bootstrap.js');
   const { DbService } = await import('../src/db/db.service.js');
@@ -68,6 +71,7 @@ before(async () => {
 after(async () => {
   await app?.close();
   await db?.stop();
+  await stripe?.stop();
 });
 
 describe('database hardening', () => {
@@ -456,5 +460,199 @@ describe('hotel operations', () => {
     assert.equal(r.status, 422);
     assert.ok(r.body.error.details.length > 0);
     assert.equal((await fd.get('/guests/not-a-uuid')).status, 400);
+  });
+});
+
+describe('guest journey: booking engine, payment and online check-in', () => {
+  const WEBHOOK_SECRET = 'whsec_testsecret123';
+  let owner: Client;
+  let propertyId: string;
+  let arrival: string;
+  let departure: string;
+  let roomTypeId: string;
+  let ratePlanId: string;
+
+  const linkFromMail = (to: string) => {
+    const msg = [...mail.outbox].reverse().find((m) => m.to === to && /\/stay\//.test(m.text));
+    assert.ok(msg, `no booking e-mail for ${to}`);
+    return /\/stay\/([\w-]+)/.exec(msg.text)![1]!;
+  };
+  const codeFromMail = (to: string) => {
+    const msg = [...mail.outbox].reverse().find((m) => m.to === to && /\b\d{6}\b/.test(m.subject));
+    assert.ok(msg, `no code e-mail for ${to}`);
+    return /\b(\d{6})\b/.exec(msg.subject)![1]!;
+  };
+  const bookingBody = (email: string, extra: Record<string, unknown> = {}) => ({
+    roomTypeId,
+    ratePlanId,
+    arrival,
+    departure,
+    adults: 2,
+    guest: { firstName: 'Sophie', lastName: 'Online', email, phone: '+33 6 00 00 00 00' },
+    estimatedArrival: '16:00 – 17:00',
+    acceptTerms: true,
+    ...extra,
+  });
+
+  before(async () => {
+    owner = await login('owner@demo.test');
+    const props = (await owner.get('/properties')).body;
+    propertyId = props[0].id;
+    arrival = addDays(props[0].businessDate, 20);
+    departure = addDays(arrival, 2);
+  });
+
+  test('a hotel publishes its booking page; disabled or unknown pages are not found', async () => {
+    const guest = await client();
+    const off = await owner.put(`/properties/${propertyId}/online-booking`, { slug: 'carpati', enabled: false });
+    assert.equal(off.status, 200, JSON.stringify(off.body));
+    assert.equal((await guest.get('/public/sites/carpati')).status, 404);
+    const on = await owner.put(`/properties/${propertyId}/online-booking`, { slug: 'carpati', enabled: true });
+    assert.equal(on.body.bookingUrl, 'http://localhost:3000/book/carpati');
+    assert.equal(on.body.paymentsEnabled, false);
+    const site = await guest.get('/public/sites/carpati');
+    assert.equal(site.status, 200);
+    assert.equal(site.body.name, 'Hotel Carpați');
+    assert.equal(site.body.payments, null);
+    assert.equal((await guest.get('/public/sites/nope-hotel')).status, 404);
+    // Front desk staff cannot change online booking settings.
+    const fd = await login('frontdesk@demo.test');
+    assert.equal((await fd.put(`/properties/${propertyId}/online-booking`, { slug: 'x-hotel', enabled: true })).status, 403);
+  });
+
+  test('guests see live availability and prices', async () => {
+    const guest = await client();
+    const avail = await guest.get(`/public/sites/carpati/availability?arrival=${arrival}&departure=${departure}&adults=2`);
+    assert.equal(avail.status, 200, JSON.stringify(avail.body));
+    const dbl = avail.body.roomTypes.find((r: any) => r.name === 'Double Room');
+    assert.ok(dbl.available > 0);
+    const bar = dbl.offers.find((o: any) => o.name === 'Best Available Rate');
+    assert.equal(bar.total, 70000);
+    roomTypeId = dbl.id;
+    ratePlanId = bar.ratePlanId;
+    assert.equal((await guest.get(`/public/sites/carpati/availability?arrival=2020-01-01&departure=2020-01-03`)).status, 422);
+  });
+
+  test('without Stripe, a booking is confirmed at once and the guest gets a private link', async () => {
+    const guest = await client();
+    const res = await guest.post('/public/sites/carpati/bookings', bookingBody('sophie.online@example.com'));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.status, 'confirmed');
+    assert.equal(res.body.payment, null);
+    assert.equal(linkFromMail('sophie.online@example.com'), res.body.token);
+    const staff = (await owner.get(`/reservations?propertyId=${propertyId}&q=${res.body.code}`)).body.items[0];
+    assert.equal(staff.source, 'website');
+    assert.equal(staff.status, 'confirmed');
+    // Terms must be accepted.
+    assert.equal((await guest.post('/public/sites/carpati/bookings', bookingBody('x@example.com', { acceptTerms: false }))).status, 422);
+  });
+
+  test('the private link alone shows the stay; changes need the e-mailed code', async () => {
+    const token = linkFromMail('sophie.online@example.com');
+    const stranger = await client();
+    const view = await stranger.get(`/public/stay/${token}`);
+    assert.equal(view.status, 200);
+    assert.equal(view.body.verified, false);
+    assert.equal(view.body.checkin, null);
+    assert.equal(view.body.guest.lastName, null);
+    assert.match(view.body.guest.email, /^s\*+e@example\.com$/);
+    assert.equal((await stranger.get('/public/stay/not-a-real-token-but-long-enough-xxxxxxxx')).status, 404);
+
+    const checkin = {
+      mainGuest: { birthDate: '1990-04-12', nationality: 'FR', documentType: 'passport', documentNumber: '19AB12345', address: '1 Rue X', country: 'FR' },
+      companions: [{ firstName: 'Luc', lastName: 'Online', documentType: 'id_card', documentNumber: 'ZZ998877' }],
+      estimatedArrival: '18:00 – 19:00',
+      requests: 'Quiet room',
+      confirm: true,
+    };
+    const denied = await stranger.post(`/public/stay/${token}/check-in`, checkin);
+    assert.equal(denied.body.error.code, 'GUEST_VERIFICATION_REQUIRED');
+
+    assert.equal((await stranger.post(`/public/stay/${token}/code`)).status, 200);
+    assert.equal((await stranger.post(`/public/stay/${token}/verify`, { code: '000000' === codeFromMail('sophie.online@example.com') ? '111111' : '000000' })).body.error.code, 'INVALID_CODE');
+    assert.equal((await stranger.post(`/public/stay/${token}/verify`, { code: codeFromMail('sophie.online@example.com') })).status, 200);
+
+    const tooMany = await stranger.post(`/public/stay/${token}/check-in`, { ...checkin, companions: [checkin.companions[0], checkin.companions[0]] });
+    assert.equal(tooMany.status, 422);
+    const done = await stranger.post(`/public/stay/${token}/check-in`, checkin);
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    assert.ok(done.body.booking.onlineCheckinAt);
+    assert.equal(done.body.checkin.mainGuest.documentNumber, '*****2345');
+
+    // Reception sees the online check-in, the arrival time and the companion.
+    const fd = await login('frontdesk@demo.test');
+    const id = (await fd.get(`/reservations?propertyId=${propertyId}&q=Online`)).body.items[0].id;
+    const r = (await fd.get(`/reservations/${id}`)).body;
+    assert.ok(r.onlineCheckinAt);
+    assert.equal(r.estimatedArrival, '18:00 – 19:00');
+    assert.equal(r.companions[0].documentNumber, 'ZZ998877');
+    assert.equal(r.guest.documentNumber, '19AB12345');
+    const acc = await login('accounting@demo.test');
+    assert.equal((await acc.get(`/reservations/${id}`)).body.companions[0].documentNumber, '****8877');
+  });
+
+  test('with Stripe, the room is held until payment; a signed webhook confirms it once', async () => {
+    const cfg = await owner.put(`/properties/${propertyId}/online-booking`, {
+      slug: 'carpati',
+      enabled: true,
+      stripePublishableKey: 'pk_test_123',
+      stripeSecretKey: 'sk_test_123',
+      stripeWebhookSecret: WEBHOOK_SECRET,
+    });
+    assert.equal(cfg.body.paymentsEnabled, true);
+    assert.equal(cfg.body.hasSecretKey, true);
+    assert.ok(!JSON.stringify(cfg.body).includes('sk_test_123'));
+
+    const guest = await client();
+    const res = await guest.post('/public/sites/carpati/bookings', bookingBody('paying.guest@example.com', { guest: { firstName: 'Pay', lastName: 'Ing', email: 'paying.guest@example.com' } }));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.status, 'awaiting_payment');
+    assert.equal(res.body.payment.publishableKey, 'pk_test_123');
+    const piId = res.body.payment.clientSecret.split('_secret_')[0];
+    assert.equal(stripe.intents.get(piId)!.amount, 70000);
+    assert.equal(stripe.intents.get(piId)!.metadata.code, res.body.code);
+    const pending = (await owner.get(`/reservations?propertyId=${propertyId}&q=${res.body.code}`)).body.items[0];
+    assert.equal(pending.status, 'tentative');
+    // The paying guest can't check in before paying.
+    const early = await guest.post(`/public/stay/${res.body.token}/check-in`, {
+      mainGuest: { birthDate: '1980-01-01', nationality: 'RO', documentType: 'id_card', documentNumber: 'X1' },
+      confirm: true,
+    });
+    assert.equal(early.status, 409);
+
+    const pi = stripe.succeed(piId);
+    const payload = JSON.stringify({ id: 'evt_1', object: 'event', type: 'payment_intent.succeeded', data: { object: pi } });
+    const { default: Stripe } = await import('stripe');
+    const sign = (secret: string) => new Stripe('sk_test_x').webhooks.generateTestHeaderString({ payload, secret });
+    const hook = (sig: string) =>
+      fetch(`${base}/api/public/stripe/webhook/carpati`, { method: 'POST', headers: { 'content-type': 'application/json', 'stripe-signature': sig }, body: payload });
+    assert.equal((await hook(sign('whsec_wrong'))).status, 400);
+    assert.equal((await hook(sign(WEBHOOK_SECRET))).status, 200);
+    assert.equal((await hook(sign(WEBHOOK_SECRET))).status, 200);
+    // The guest's return to the site is also safe to repeat.
+    assert.equal((await guest.post(`/public/stay/${res.body.token}/confirm-payment`)).body.booking.status, 'confirmed');
+
+    const detail = (await owner.get(`/reservations/${pending.id}`)).body;
+    assert.equal(detail.status, 'confirmed');
+    assert.equal(detail.payments.length, 1);
+    assert.equal(detail.payments[0].amount, 70000);
+    assert.equal(detail.payments[0].reference, piId);
+    assert.equal(linkFromMail('paying.guest@example.com'), res.body.token);
+    // The browser that booked may check in straight away, no code needed.
+    const ok = await guest.post(`/public/stay/${res.body.token}/check-in`, {
+      mainGuest: { birthDate: '1980-01-01', nationality: 'RO', documentType: 'id_card', documentNumber: 'RX123456' },
+      confirm: true,
+    });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  });
+
+  test('an unpaid booking releases its room when the hold expires', async () => {
+    const guest = await client();
+    const res = await guest.post('/public/sites/carpati/bookings', bookingBody('never.pays@example.com', { guest: { firstName: 'Never', lastName: 'Pays', email: 'never.pays@example.com' } }));
+    assert.equal(res.body.status, 'awaiting_payment');
+    await db.superQuery(`update reservations set hold_expires_at = now() - interval '1 minute' where code = $1`, [res.body.code]);
+    await guest.get(`/public/sites/carpati/availability?arrival=${arrival}&departure=${departure}&adults=2`);
+    const r = (await owner.get(`/reservations?propertyId=${propertyId}&q=${res.body.code}`)).body.items[0];
+    assert.equal(r.status, 'cancelled');
   });
 });

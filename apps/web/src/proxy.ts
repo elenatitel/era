@@ -4,14 +4,17 @@ import { type NextRequest, NextResponse } from 'next/server';
 export function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
   const isDev = process.env.NODE_ENV === 'development';
+  // Card payments (Stripe Payment Element) are only loaded on the guest booking pages.
+  const stripe = request.nextUrl.pathname.startsWith('/book/');
   const csp = [
     `default-src 'self'`,
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? ` 'unsafe-eval'` : ''}`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${stripe ? ' https://js.stripe.com' : ''}${isDev ? ` 'unsafe-eval'` : ''}`,
     // Inline style attributes are used for layout (calendar bars); scripts stay nonce-locked.
     `style-src 'self' 'unsafe-inline'`,
-    `img-src 'self' blob: data:`,
+    `img-src 'self' blob: data:${stripe ? ' https://*.stripe.com' : ''}`,
     `font-src 'self'`,
-    `connect-src 'self'${isDev ? ' ws:' : ''}`,
+    `connect-src 'self'${stripe ? ' https://api.stripe.com' : ''}${isDev ? ' ws:' : ''}`,
+    `frame-src ${stripe ? 'https://js.stripe.com https://hooks.stripe.com' : "'none'"}`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,

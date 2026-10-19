@@ -74,6 +74,7 @@ function useNav(): { title: string; items: NavItem[] }[] {
         { href: '/settings/property', label: t('nav.property'), icon: Settings, perms: ['property.read'] },
         { href: '/settings/rooms', label: t('nav.rooms'), icon: BedDouble, perms: ['rooms.read'] },
         { href: '/settings/rates', label: t('nav.rates'), icon: Tags, perms: ['rates.read'] },
+        { href: '/settings/online-booking', label: t('nav.onlineBooking'), icon: Globe, perms: ['property.manage'] },
         { href: '/settings/team', label: t('nav.team'), icon: UserCog, perms: ['users.read'] },
         { href: '/settings/roles', label: t('nav.roles'), icon: ShieldCheck, perms: ['users.read'] },
         { href: '/settings/organization', label: t('nav.organization'), icon: FileText, perms: ['tenant.settings'] },

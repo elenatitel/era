@@ -3,6 +3,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthGuard } from './auth/auth.guard.js';
 import { AuthModule } from './auth/auth.module.js';
+import { BookingModule } from './booking/booking.module.js';
 import { CsrfGuard } from './common/csrf.guard.js';
 import { AllExceptionsFilter } from './common/http-exception.filter.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
@@ -34,6 +35,7 @@ import { TenantModule } from './tenant/tenant.module.js';
     FinanceModule,
     HousekeepingModule,
     DashboardModule,
+    BookingModule,
     HealthModule,
   ],
   providers: [

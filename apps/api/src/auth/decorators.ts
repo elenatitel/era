@@ -14,3 +14,7 @@ export const Perms = (...permissions: Permission[]) => SetMetadata(PERMISSIONS_K
 export const TenantScoped = () => SetMetadata(TENANT_KEY, true);
 /** Platform operators only (must have MFA enabled). */
 export const PlatformAdmin = () => SetMetadata(PLATFORM_ADMIN_KEY, true);
+
+export const SKIP_CSRF = 'skipCsrf';
+/** For machine-to-machine callbacks that authenticate by signature (Stripe webhooks). */
+export const SkipCsrf = () => SetMetadata(SKIP_CSRF, true);

@@ -182,6 +182,54 @@ export default function ReservationPage() {
         </Card>
       </div>
 
+      {(r.onlineCheckinAt || r.estimatedArrival || r.guestRequests || r.companions.length > 0) && (
+        <Card
+          className="mt-6"
+          title={
+            <span className="flex items-center gap-2">
+              {t('online.checkedInOnline')}
+              {r.onlineCheckinAt ? <Badge tone="green" dot>{dateTime(r.onlineCheckinAt, locale)}</Badge> : <Badge tone="gray">{t('guest.notStarted')}</Badge>}
+            </span>
+          }
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+              {r.estimatedArrival && (
+                <>
+                  <dt className="text-muted">{t('online.estimatedArrival')}</dt>
+                  <dd>{r.estimatedArrival}</dd>
+                </>
+              )}
+              {r.guestRequests && (
+                <>
+                  <dt className="text-muted">{t('online.requests')}</dt>
+                  <dd className="whitespace-pre-wrap">{r.guestRequests}</dd>
+                </>
+              )}
+            </dl>
+            {r.companions.length > 0 && (
+              <div>
+                <p className="eyebrow mb-2">{t('online.companions')}</p>
+                <ul className="divide-y divide-line text-sm">
+                  {r.companions.map((c) => (
+                    <li key={c.id} className="flex justify-between gap-3 py-1.5">
+                      <span>
+                        {c.firstName} {c.lastName}
+                        {c.birthDate && <span className="block text-xs text-muted">{date(c.birthDate, locale)}</span>}
+                      </span>
+                      <span className="text-right text-xs text-muted">
+                        {c.documentType && t(`docTypes.${c.documentType}`)}
+                        {c.documentNumber && <span className="code block">{c.documentNumber}</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
       {r.notes && (
         <Card className="mt-6" title={t('common.notes')}>
           <p className="text-sm whitespace-pre-wrap">{r.notes}</p>

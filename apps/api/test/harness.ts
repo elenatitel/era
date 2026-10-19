@@ -91,3 +91,66 @@ export class Client {
   put = <T = any>(path: string, body?: unknown) => this.req<T>('PUT', path, body ?? {});
   del = <T = any>(path: string) => this.req<T>('DELETE', path);
 }
+
+/**
+ * A minimal stand-in for the Stripe API (PaymentIntents only), so the booking flow can be
+ * tested end to end without network access or real keys. The SDK is pointed at it through
+ * STRIPE_API_BASE, which production ignores.
+ */
+export async function startFakeStripe() {
+  const { createServer: createHttp } = await import('node:http');
+  const intents = new Map<string, Record<string, any>>();
+  const byIdempotency = new Map<string, string>();
+  let seq = 0;
+  const server = createHttp((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      const send = (status: number, data: unknown) => {
+        res.writeHead(status, { 'content-type': 'application/json', 'request-id': `req_${seq}` });
+        res.end(JSON.stringify(data));
+      };
+      const url = new URL(req.url ?? '/', 'http://localhost');
+      if (req.method === 'POST' && url.pathname === '/v1/payment_intents') {
+        const key = req.headers['idempotency-key'] as string | undefined;
+        if (key && byIdempotency.has(key)) return send(200, intents.get(byIdempotency.get(key)!));
+        const form = new URLSearchParams(body);
+        const metadata: Record<string, string> = {};
+        for (const [k, v] of form) {
+          const m = /^metadata\[(.+)\]$/.exec(k);
+          if (m) metadata[m[1]!] = v;
+        }
+        const id = `pi_test_${++seq}`;
+        const pi = {
+          id,
+          object: 'payment_intent',
+          amount: Number(form.get('amount')),
+          amount_received: 0,
+          currency: form.get('currency'),
+          status: 'requires_payment_method',
+          client_secret: `${id}_secret_test`,
+          metadata,
+        };
+        intents.set(id, pi);
+        if (key) byIdempotency.set(key, id);
+        return send(200, pi);
+      }
+      const m = /^\/v1\/payment_intents\/([\w]+)$/.exec(url.pathname);
+      if (req.method === 'GET' && m && intents.has(m[1]!)) return send(200, intents.get(m[1]!));
+      send(404, { error: { type: 'invalid_request_error', message: 'No such object' } });
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+  const port = (server.address() as { port: number }).port;
+  return {
+    base: `http://127.0.0.1:${port}`,
+    intents,
+    succeed(id: string) {
+      const pi = intents.get(id)!;
+      pi.status = 'succeeded';
+      pi.amount_received = pi.amount;
+      return pi;
+    },
+    stop: () => new Promise<void>((r) => server.close(() => r())),
+  };
+}
