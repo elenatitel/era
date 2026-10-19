@@ -72,7 +72,7 @@ export const createTenantSchema = z.object({
   slug,
   ownerEmail: email,
   ownerName: trimmed(120),
-  locale: z.enum(LOCALES).default('ro'),
+  locale: z.enum(LOCALES).default('en'),
 });
 export const updateTenantStatusSchema = z.object({ status: z.enum(['active', 'suspended']) });
 

@@ -23,7 +23,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // Reading headers opts into dynamic rendering so Next can apply the per-request CSP nonce.
   await headers();
   return (
-    <html lang="ro" className={`${figtree.variable} ${cormorant.variable} ${plexMono.variable}`}>
+    <html lang="en" className={`${figtree.variable} ${cormorant.variable} ${plexMono.variable}`}>
       <body className="min-h-screen font-sans">
         <Providers>{children}</Providers>
       </body>

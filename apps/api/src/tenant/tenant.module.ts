@@ -201,7 +201,7 @@ export class TenantService {
       return inv!;
     });
     const [tenant] = await this.db.db.select().from(tenants).where(eq(tenants.id, tenantId));
-    await this.mail.sendInvitation(input.email, tenant!.name, token, tenant!.defaultLocale === 'en' ? 'en' : 'ro');
+    await this.mail.sendInvitation(input.email, tenant!.name, token, tenant!.defaultLocale === 'ro' ? 'ro' : 'en');
     return invitation;
   }
 

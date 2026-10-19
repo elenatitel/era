@@ -25,14 +25,14 @@ export default function PlatformPage() {
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState('');
-  const [f, setF] = useState({ name: '', slug: '', ownerEmail: '', ownerName: '', locale: 'ro' });
+  const [f, setF] = useState({ name: '', slug: '', ownerEmail: '', ownerName: '', locale: 'en' });
   const list = useQuery({ queryKey: ['platform-tenants'], queryFn: () => api.get<Tenant[]>('/platform/tenants'), enabled: me.user.isPlatformAdmin, retry: false });
   const create = useMutation({
     mutationFn: () => api.post('/platform/tenants', f),
     onSuccess: () => {
       setCreating(false);
       setNotice(t('platform.created'));
-      setF({ name: '', slug: '', ownerEmail: '', ownerName: '', locale: 'ro' });
+      setF({ name: '', slug: '', ownerEmail: '', ownerName: '', locale: 'en' });
       void qc.invalidateQueries({ queryKey: ['platform-tenants'] });
     },
   });
@@ -87,8 +87,8 @@ export default function PlatformPage() {
           <Field label={t('settings.defaultLocale')}>
             {(id) => (
               <Select id={id} value={f.locale} onChange={(e) => setF({ ...f, locale: e.target.value })}>
-                <option value="ro">Română</option>
                 <option value="en">English</option>
+                <option value="ro">Română</option>
               </Select>
             )}
           </Field>

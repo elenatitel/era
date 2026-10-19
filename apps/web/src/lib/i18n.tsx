@@ -2,7 +2,7 @@
 
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-export type Locale = 'ro' | 'en';
+export type Locale = 'en' | 'ro';
 
 const en = {
   app: { name: 'era.', tagline: 'A new era of hospitality' },
@@ -284,7 +284,7 @@ type I18n = { locale: Locale; setLocale: (l: Locale) => void; t: (key: string, v
 const Ctx = createContext<I18n | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>('ro');
+  const [locale, setLocaleState] = useState<Locale>('en');
   useEffect(() => {
     try {
       const saved = localStorage.getItem('pms_locale');

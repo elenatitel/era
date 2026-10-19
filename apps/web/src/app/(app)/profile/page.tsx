@@ -131,8 +131,8 @@ export default function ProfilePage() {
             <Field label={t('profile.language')}>
               {(id) => (
                 <Select id={id} value={locale} onChange={(e) => setLocale(e.target.value as Locale)}>
-                  <option value="ro">Română</option>
                   <option value="en">English</option>
+                  <option value="ro">Română</option>
                 </Select>
               )}
             </Field>

@@ -246,7 +246,7 @@ export class AuthService {
       tokenHash: sha256(token),
       expiresAt: new Date(Date.now() + RESET_TTL_MS),
     });
-    await this.mail.sendPasswordReset(user.email, token, user.locale === 'en' ? 'en' : 'ro');
+    await this.mail.sendPasswordReset(user.email, token, user.locale === 'ro' ? 'ro' : 'en');
     await this.audit.security('password_reset_requested', { userId: user.id });
   }
 
@@ -280,7 +280,7 @@ export class AuthService {
 
   private async findInvitation(token: string) {
     const [row] = await this.db.db
-      .select({ invitation: invitations, tenantName: tenants.name, tenantStatus: tenants.status })
+      .select({ invitation: invitations, tenantName: tenants.name, tenantStatus: tenants.status, tenantLocale: tenants.defaultLocale })
       .from(invitations)
       .innerJoin(tenants, eq(tenants.id, invitations.tenantId))
       .where(
@@ -304,7 +304,7 @@ export class AuthService {
   }
 
   async acceptInvitation(token: string, name?: string, password?: string) {
-    const { invitation } = await this.findInvitation(token);
+    const { invitation, tenantLocale } = await this.findInvitation(token);
     let user = await this.findUserByEmail(invitation.email);
     if (!user?.passwordHash) {
       if (!name || !password) {
@@ -314,7 +314,8 @@ export class AuthService {
       if (user) {
         [user] = await this.db.db.update(users).set({ name, passwordHash }).where(eq(users.id, user.id)).returning();
       } else {
-        [user] = await this.db.db.insert(users).values({ email: invitation.email, name, passwordHash }).returning();
+        // New people start in their organization's default language; they can change it in My account.
+        [user] = await this.db.db.insert(users).values({ email: invitation.email, name, passwordHash, locale: tenantLocale }).returning();
       }
     }
     const userId = user!.id;

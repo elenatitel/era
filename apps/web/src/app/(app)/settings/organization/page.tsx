@@ -41,8 +41,8 @@ export default function OrganizationPage() {
           <Field label={t('settings.defaultLocale')}>
             {(id) => (
               <Select id={id} value={f.defaultLocale} onChange={(e) => setF({ ...f, defaultLocale: e.target.value as 'ro' | 'en' })}>
-                <option value="ro">Română</option>
                 <option value="en">English</option>
+                <option value="ro">Română</option>
               </Select>
             )}
           </Field>

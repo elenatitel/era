@@ -45,7 +45,7 @@ export type HousekeepingTaskStatus = (typeof HK_TASK_STATUSES)[number];
 export const CURRENCIES = ['RON', 'EUR', 'USD', 'GBP'] as const;
 export type Currency = (typeof CURRENCIES)[number];
 
-export const LOCALES = ['ro', 'en'] as const;
+export const LOCALES = ['en', 'ro'] as const;
 export type Locale = (typeof LOCALES)[number];
 
 /** Error codes returned by the API in `error.code` so the UI can react precisely. */

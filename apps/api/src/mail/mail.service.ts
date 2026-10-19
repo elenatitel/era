@@ -2,7 +2,7 @@ import { Global, Injectable, Logger, Module } from '@nestjs/common';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { config } from '../config.js';
 
-type Locale = 'ro' | 'en';
+type Locale = 'en' | 'ro';
 
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 

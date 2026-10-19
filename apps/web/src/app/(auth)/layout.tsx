@@ -35,7 +35,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       </aside>
       <main className="flex flex-col items-center justify-center px-4 py-10">
         <div className="mb-6 flex w-full max-w-sm justify-end gap-1 text-xs">
-          {(['ro', 'en'] as const).map((l) => (
+          {(['en', 'ro'] as const).map((l) => (
             <button
               key={l}
               onClick={() => setLocale(l)}

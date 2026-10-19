@@ -45,7 +45,7 @@ export const tenants = pgTable('tenants', {
   slug: text().notNull().unique(),
   status: text().notNull().default('active'),
   requireMfa: boolean().notNull().default(false),
-  defaultLocale: text().notNull().default('ro'),
+  defaultLocale: text().notNull().default('en'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -57,7 +57,7 @@ export const users = pgTable(
     email: text().notNull(),
     name: text().notNull(),
     passwordHash: text(),
-    locale: text().notNull().default('ro'),
+    locale: text().notNull().default('en'),
     isPlatformAdmin: boolean().notNull().default(false),
     mfaEnabled: boolean().notNull().default(false),
     mfaSecretEnc: text(),

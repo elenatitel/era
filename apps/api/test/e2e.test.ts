@@ -224,6 +224,9 @@ describe('platform administration and tenant isolation', () => {
     const me = await ownerB.get('/auth/me');
     assert.equal(me.body.tenant.id, tenantB.id);
     assert.equal(me.body.role.key, 'owner');
+    // English is the default language for new organizations and the people they invite.
+    assert.equal(me.body.user.locale, 'en');
+    assert.equal(me.body.tenant.defaultLocale, 'en');
   });
 
   test('tenant B cannot see or touch tenant A data', async () => {
