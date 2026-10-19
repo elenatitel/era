@@ -121,7 +121,7 @@ export default function ProfilePage() {
 
   return (
     <>
-      <PageHeader title={t('profile.title')} subtitle={me.user.email} />
+      <PageHeader eyebrow={me.tenant?.name} title={t('profile.title')} subtitle={me.user.email} />
       <div className="grid gap-6 lg:grid-cols-2">
         <Card title={t('common.details')}>
           <form className="space-y-3" onSubmit={(e) => (e.preventDefault(), profile.mutate())}>

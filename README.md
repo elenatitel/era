@@ -1,6 +1,6 @@
-# HotelPMS
+# era.
 
-Multi-tenant SaaS property management system for hotels: front office, reservations,
+*A new era of hospitality.* Multi-tenant SaaS property management system for hotels: front office, reservations,
 housekeeping, guest CRM, invoicing and payments — with tenant isolation enforced by the database,
 role-based permissions, two-factor authentication and GDPR tooling. UI in Romanian and English.
 

@@ -106,7 +106,7 @@ export default function InvoicePage() {
         <header className="flex flex-wrap items-start justify-between gap-6 border-b border-line pb-6">
           <div>
             <h1 className="text-2xl font-semibold">{t(`invoices.${inv.type}`)}</h1>
-            <p className="mt-1 font-mono text-lg">{inv.fullNumber}</p>
+            <p className="mt-1 font-mono text-lg font-medium text-accent">{inv.fullNumber}</p>
           </div>
           <div className="text-right text-sm">
             <p>

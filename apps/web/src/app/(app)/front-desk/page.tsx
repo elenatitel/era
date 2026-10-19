@@ -60,7 +60,7 @@ function FrontDeskView({ property }: { property: Property }) {
     <>
       <PageHeader
         title={t('frontDesk.title')}
-        subtitle={`${property.name} · ${date(d.businessDate, locale)}`}
+        eyebrow={`${property.name} · ${date(d.businessDate, locale)}`}
         actions={can('reservations.create') && <ButtonLink href="/reservations/new">{t('reservations.new')}</ButtonLink>}
       />
       <div className="grid gap-6 xl:grid-cols-2">

@@ -30,7 +30,7 @@ export default function ForgotPasswordPage() {
   return (
     <form onSubmit={submit} className="space-y-5">
       <div>
-        <h1 className="text-2xl font-semibold">{t('auth.forgotTitle')}</h1>
+        <h1 className="font-display text-[32px] leading-[38px] font-medium">{t('auth.forgotTitle')}</h1>
         <p className="mt-1 text-sm text-muted">{t('auth.forgotHint')}</p>
       </div>
       <ErrorText error={error} />

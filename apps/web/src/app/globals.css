@@ -140,3 +140,8 @@ body {
     display: none !important;
   }
 }
+
+/* Iconography: Lucide outline icons at a 1.75px stroke (design system rule). */
+svg.lucide {
+  stroke-width: 1.75;
+}

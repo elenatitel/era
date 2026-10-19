@@ -124,7 +124,7 @@ function Rooms({ property }: { property: Property }) {
   if (types.isLoading || rooms.isLoading) return <Spinner />;
   return (
     <>
-      <PageHeader title={t('nav.rooms')} subtitle={property.name} />
+      <PageHeader title={t('nav.rooms')} eyebrow={property.name} />
       <ErrorText error={types.error ?? rooms.error} />
       <Card
         title={t('settings.roomTypes')}
@@ -134,7 +134,7 @@ function Rooms({ property }: { property: Property }) {
         <Table head={[t('common.code'), t('common.name'), t('settings.maxOccupancy'), t('settings.baseRate'), t('settings.rooms'), '']} empty={!types.data?.length}>
           {types.data?.map((rt) => (
             <tr key={rt.id} className={rt.active ? '' : 'opacity-50'}>
-              <Td className="font-mono text-xs font-semibold">{rt.code}</Td>
+              <Td><span className="code">{rt.code}</span></Td>
               <Td>{rt.name}</Td>
               <Td>{rt.baseOccupancy} / {rt.maxOccupancy}</Td>
               <Td>{money(rt.baseRate, property.currency, locale)}</Td>

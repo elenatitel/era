@@ -36,7 +36,7 @@ export default function SelectOrganizationPage() {
   const list = me.data.memberships;
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-semibold">{t('auth.chooseOrg')}</h1>
+      <h1 className="font-display text-[32px] leading-[38px] font-medium">{t('auth.chooseOrg')}</h1>
       <ErrorText error={error} />
       {list.length === 0 && <Alert tone="amber">{t('auth.noOrgs')}</Alert>}
       <ul className="space-y-2">

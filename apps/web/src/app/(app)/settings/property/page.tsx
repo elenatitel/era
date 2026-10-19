@@ -105,6 +105,7 @@ export default function PropertySettingsPage() {
   return (
     <>
       <PageHeader
+        eyebrow={t('nav.settings')}
         title={t('settings.propertyTitle')}
         actions={
           can('property.manage') &&

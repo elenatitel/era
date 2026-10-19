@@ -107,7 +107,7 @@ export default function TeamPage() {
 
   return (
     <>
-      <PageHeader title={t('settings.team')} actions={manage && <Button onClick={() => setInviting(true)}><UserPlus size={16} /> {t('settings.invite')}</Button>} />
+      <PageHeader eyebrow={t('nav.administration')} title={t('settings.team')} actions={manage && <Button onClick={() => setInviting(true)}><UserPlus size={16} /> {t('settings.invite')}</Button>} />
       <ErrorText error={members.error ?? update.error ?? remove.error ?? revoke.error} />
       <Card padded={false}>
         <Table head={[t('common.name'), t('settings.role'), t('settings.properties'), t('settings.lastLogin'), t('common.status'), '']}>

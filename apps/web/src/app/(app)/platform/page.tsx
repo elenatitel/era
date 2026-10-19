@@ -46,7 +46,7 @@ export default function PlatformPage() {
 
   return (
     <>
-      <PageHeader title={t('platform.title')} actions={<Button onClick={() => setCreating(true)} disabled={Boolean(list.error)}><Plus size={16} /> {t('platform.newTenant')}</Button>} />
+      <PageHeader eyebrow={t('nav.platform')} title={t('platform.title')} actions={<Button onClick={() => setCreating(true)} disabled={Boolean(list.error)}><Plus size={16} /> {t('platform.newTenant')}</Button>} />
       {notice && <div className="mb-4"><Alert tone="green">{notice}</Alert></div>}
       <ErrorText error={list.error ?? status.error} />
       {list.isLoading ? (
@@ -58,7 +58,7 @@ export default function PlatformPage() {
               {list.data.map((tn) => (
                 <tr key={tn.id}>
                   <Td className="font-medium">{tn.name} {tn.requireMfa && <Badge tone="green">2FA</Badge>}</Td>
-                  <Td className="font-mono text-xs">{tn.slug}</Td>
+                  <Td><span className="code">{tn.slug}</span></Td>
                   <Td><Badge tone={statusTone[tn.status]}>{tn.status}</Badge></Td>
                   <Td>{tn.activeSessions}</Td>
                   <Td className="text-muted">{dateTime(tn.createdAt, locale)}</Td>

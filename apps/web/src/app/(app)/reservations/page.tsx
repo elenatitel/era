@@ -27,6 +27,7 @@ function List({ property }: { property: Property }) {
   return (
     <>
       <PageHeader
+        eyebrow={property.name}
         title={t('reservations.title')}
         actions={
           can('reservations.create') && (
@@ -81,7 +82,7 @@ function List({ property }: { property: Property }) {
               {list.data?.items.map((r) => (
                 <tr key={r.id} className="hover:bg-subtle">
                   <Td>
-                    <Link href={`/reservations/${r.id}`} className="font-mono text-xs font-semibold text-accent hover:underline">
+                    <Link href={`/reservations/${r.id}`} className="code hover:underline">
                       {r.code}
                     </Link>
                   </Td>

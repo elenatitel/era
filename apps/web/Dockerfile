@@ -8,7 +8,7 @@ COPY apps/web/package.json apps/web/
 RUN npm ci -w @pms/shared -w @pms/web --include-workspace-root
 COPY packages/shared packages/shared
 COPY apps/web apps/web
-ARG NEXT_PUBLIC_APP_NAME=HotelPMS
+ARG NEXT_PUBLIC_APP_NAME=era.
 ENV NEXT_PUBLIC_APP_NAME=$NEXT_PUBLIC_APP_NAME
 RUN npm run build -w @pms/shared && npm run build -w @pms/web
 

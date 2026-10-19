@@ -69,10 +69,20 @@ export class MailService {
   private async send(to: string, t: { subject: string; intro: string; cta: string; outro: string }, link: string) {
     const app = config().APP_NAME;
     const text = `${t.intro}\n\n${t.cta}: ${link}\n\n${t.outro}\n\n— ${app}`;
-    const html = `<div style="font-family:system-ui,sans-serif;max-width:520px;margin:auto;color:#1f2937">
-      <h2 style="color:#e8552d">${escape(app)}</h2><p>${escape(t.intro)}</p>
-      <p><a href="${escape(link)}" style="display:inline-block;background:#e8552d;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">${escape(t.cta)}</a></p>
-      <p style="color:#6b7280;font-size:13px">${escape(t.outro)}</p></div>`;
+    // era. brand: navy ink on white, display serif wordmark with the accent dot (e-mail safe fonts).
+    const html = `<div style="background:#f6f7fa;padding:32px 16px;font-family:Figtree,'Segoe UI',Arial,sans-serif;color:#1b2438">
+      <div style="max-width:520px;margin:auto;background:#ffffff;border:1px solid #e6e6e6;border-radius:16px;overflow:hidden">
+        <div style="background:#2c3a5a;padding:24px 32px">
+          <span style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;font-style:italic;font-size:34px;line-height:34px;color:#ffffff">${escape(app.replace(/\.$/, ''))}</span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#8fa5d8;margin-left:2px"></span>
+          <div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#c7d1ea;margin-top:4px">A new era of hospitality</div>
+        </div>
+        <div style="padding:28px 32px">
+          <p style="margin:0 0 20px;font-size:15px;line-height:22px">${escape(t.intro)}</p>
+          <p style="margin:0 0 24px"><a href="${escape(link)}" style="display:inline-block;background:#2c3a5a;color:#ffffff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">${escape(t.cta)}</a></p>
+          <p style="margin:0;color:#55607a;font-size:13px;line-height:19px">${escape(t.outro)}</p>
+        </div>
+      </div>
+    </div>`;
     this.outbox.push({ to, subject: t.subject, text });
     if (this.outbox.length > 50) this.outbox.shift();
     if (!this.transport) {

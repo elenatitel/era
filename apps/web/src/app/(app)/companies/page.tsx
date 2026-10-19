@@ -81,6 +81,7 @@ export default function CompaniesPage() {
   return (
     <>
       <PageHeader
+        eyebrow={t('nav.crm')}
         title={t('companies.title')}
         actions={
           can('guests.manage') && (

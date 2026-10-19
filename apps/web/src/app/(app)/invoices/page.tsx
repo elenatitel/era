@@ -21,7 +21,7 @@ function Invoices({ property }: { property: Property }) {
   });
   return (
     <>
-      <PageHeader title={t('invoices.title')} subtitle={property.name} />
+      <PageHeader title={t('invoices.title')} eyebrow={property.name} />
       <Card padded={false}>
         <div className="border-b border-line p-3">
           <Select className="w-48" value={type} onChange={(e) => (setType(e.target.value), setPage(1))}>
@@ -42,7 +42,7 @@ function Invoices({ property }: { property: Property }) {
               {list.data?.items.map((i) => (
                 <tr key={i.id} className="hover:bg-subtle">
                   <Td>
-                    <Link href={`/invoices/${i.id}`} className="font-mono text-xs font-semibold text-accent hover:underline">
+                    <Link href={`/invoices/${i.id}`} className="code hover:underline">
                       {i.fullNumber}
                     </Link>
                   </Td>

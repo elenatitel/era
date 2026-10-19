@@ -5,7 +5,7 @@ const bool = z.enum(['true', 'false', '1', '0']).transform((v) => v === 'true' |
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().default(4000),
-  APP_NAME: z.string().default('HotelPMS'),
+  APP_NAME: z.string().default('era.'),
   /** Public URL of the web app, used for CORS/Origin checks and links in e-mails. */
   WEB_ORIGIN: z.url().default('http://localhost:3000'),
   /** Application role: must NOT be a superuser or have BYPASSRLS. */
@@ -30,7 +30,7 @@ const schema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   SMTP_SECURE: bool.default(false),
-  MAIL_FROM: z.string().default('HotelPMS <no-reply@localhost>'),
+  MAIL_FROM: z.string().default('era. <no-reply@localhost>'),
   PLATFORM_ADMIN_EMAIL: z.string().optional(),
   PLATFORM_ADMIN_PASSWORD: z.string().optional(),
   LOG_LEVEL: z.enum(['error', 'warn', 'log', 'debug', 'verbose']).default('log'),

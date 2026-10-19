@@ -51,6 +51,7 @@ export default function GuestPage() {
   return (
     <>
       <PageHeader
+        eyebrow={t('nav.guests')}
         title={`${g.firstName} ${g.lastName}`}
         subtitle={<Badge tone={statusTone[g.segment]}>{t(`segments.${g.segment}`)}</Badge>}
         actions={
@@ -98,7 +99,7 @@ export default function GuestPage() {
             {g.history.map((h) => (
               <tr key={h.id}>
                 <Td>
-                  <Link href={`/reservations/${h.id}`} className="font-mono text-xs text-accent hover:underline">
+                  <Link href={`/reservations/${h.id}`} className="code hover:underline">
                     {h.code}
                   </Link>
                 </Td>

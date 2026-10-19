@@ -137,13 +137,13 @@ function Rates({ property }: { property: Property }) {
   if (plans.isLoading || grid.isLoading) return <Spinner />;
   return (
     <>
-      <PageHeader title={t('nav.rates')} subtitle={property.name} />
+      <PageHeader title={t('nav.rates')} eyebrow={property.name} />
       <ErrorText error={plans.error ?? grid.error} />
       <Card title={t('settings.ratePlans')} padded={false} actions={manage && <Button size="sm" onClick={() => setEditPlan('new')}><Plus size={14} /> {t('settings.newRatePlan')}</Button>}>
         <Table head={[t('common.code'), t('common.name'), t('settings.adjustment'), t('settings.minNights'), t('common.status'), '']} empty={!plans.data?.length}>
           {plans.data?.map((p) => (
             <tr key={p.id}>
-              <Td className="font-mono text-xs font-semibold">{p.code}</Td>
+              <Td><span className="code">{p.code}</span></Td>
               <Td>
                 {p.name} {p.includesBreakfast && <Badge tone="amber">{t('reservations.breakfast')}</Badge>}
               </Td>

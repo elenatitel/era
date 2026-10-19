@@ -26,7 +26,7 @@ function Payments({ property }: { property: Property }) {
     <>
       <PageHeader
         title={t('paymentsReport.title')}
-        subtitle={property.name}
+        eyebrow={property.name}
         actions={
           <div className="flex gap-2">
             <Field label={t('common.from')}>{(id) => <Input id={id} type="date" value={from} onChange={(e) => setFrom(e.target.value)} />}</Field>

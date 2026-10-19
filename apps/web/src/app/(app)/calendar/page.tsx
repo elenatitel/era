@@ -49,7 +49,7 @@ function Calendar({ property }: { property: Property }) {
     <>
       <PageHeader
         title={t('calendar.title')}
-        subtitle={property.name}
+        eyebrow={property.name}
         actions={
           <>
             <Button variant="secondary" size="sm" onClick={() => setStart(addDays(start, -7))} aria-label={t('common.previous')}>

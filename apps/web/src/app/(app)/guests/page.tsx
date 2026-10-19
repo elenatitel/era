@@ -31,6 +31,7 @@ export default function GuestsPage() {
   return (
     <>
       <PageHeader
+        eyebrow={t('nav.crm')}
         title={t('guests.title')}
         actions={
           can('guests.manage') && (

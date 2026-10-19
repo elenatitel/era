@@ -125,6 +125,19 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <Globe size={17} /> {t('nav.platform')}
         </Link>
       )}
+      <Link href="/profile" onClick={onNavigate} className="mt-auto flex items-center gap-2.5 border-t border-line px-2 pt-4 hover:text-accent">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand text-xs font-semibold text-on-brand">
+          {me.user.name
+            .split(' ')
+            .map((p) => p[0])
+            .slice(0, 2)
+            .join('')}
+        </span>
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate text-sm font-medium">{me.user.name}</span>
+          <span className="truncate text-xs text-muted">{me.tenant?.name ?? me.user.email}</span>
+        </span>
+      </Link>
     </nav>
   );
 }
@@ -173,7 +186,7 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
         >
           {locale === 'ro' ? 'EN' : 'RO'}
         </button>
-        <Link href="/profile" className="flex items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-subtle">
+        <Link href="/profile" className="flex items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-subtle lg:hidden">
           <span className="grid h-7 w-7 place-items-center rounded-full bg-brand text-xs font-semibold text-on-brand">
             {me.user.name
               .split(' ')

@@ -72,7 +72,7 @@ function NewReservation({ property }: { property: Property }) {
 
   return (
     <>
-      <PageHeader title={t('reservations.new')} subtitle={property.name} />
+      <PageHeader title={t('reservations.new')} eyebrow={property.name} />
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <Card>

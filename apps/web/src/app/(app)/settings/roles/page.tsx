@@ -59,7 +59,7 @@ function RoleEditor({ role, catalogue, onDone }: { role?: Role; catalogue: Catal
                   onChange={(v) => setPerms(v ? [...perms, p] : perms.filter((x) => x !== p))}
                   label={
                     <span>
-                      <span className="font-mono text-xs">{p}</span>
+                      <span className="code">{p}</span>
                       <span className="block text-xs text-muted">{desc[p]}</span>
                     </span>
                   }
@@ -90,7 +90,7 @@ export default function RolesPage() {
   if (roles.isLoading) return <Spinner />;
   return (
     <>
-      <PageHeader title={t('settings.roles')} actions={manage && <Button onClick={() => setEdit('new')}><Plus size={16} /> {t('settings.newRole')}</Button>} />
+      <PageHeader eyebrow={t('nav.administration')} title={t('settings.roles')} actions={manage && <Button onClick={() => setEdit('new')}><Plus size={16} /> {t('settings.newRole')}</Button>} />
       <ErrorText error={roles.error ?? del.error} />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {roles.data?.map((r) => (

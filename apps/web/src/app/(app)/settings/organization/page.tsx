@@ -32,7 +32,7 @@ export default function OrganizationPage() {
   if (!f) return <Spinner />;
   return (
     <>
-      <PageHeader title={t('settings.organization')} subtitle={f.slug} />
+      <PageHeader eyebrow={t('nav.administration')} title={t('settings.organization')} subtitle={f.slug} />
       <Card>
         <form className="max-w-xl space-y-4" onSubmit={(e) => (e.preventDefault(), save.mutate())}>
           <ErrorText error={save.error} />

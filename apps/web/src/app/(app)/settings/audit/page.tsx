@@ -36,7 +36,7 @@ export default function AuditPage() {
   if (!can('audit.read')) return <Forbidden />;
   return (
     <>
-      <PageHeader title={t('settings.audit')} />
+      <PageHeader eyebrow={t('nav.administration')} title={t('settings.audit')} />
       <Card padded={false}>
         <div className="border-b border-line p-3">
           <Select className="w-56" value={entityType} onChange={(e) => (setEntityType(e.target.value), setPage(1))}>

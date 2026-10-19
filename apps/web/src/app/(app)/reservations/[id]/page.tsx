@@ -107,10 +107,11 @@ export default function ReservationPage() {
   return (
     <>
       <PageHeader
+        eyebrow={`${t('nav.reservations')} · ${r.property.name}`}
         title={`${r.guest?.firstName ?? ''} ${r.guest?.lastName ?? ''}`}
         subtitle={
           <span className="inline-flex flex-wrap items-center gap-2">
-            <span className="font-mono">{r.code}</span>
+            <span className="code">{r.code}</span>
             <Badge tone={statusTone[r.status]}>{t(`resStatus.${r.status}`)}</Badge>
             <span>
               {t(`sources.${r.source}`)} · {dateTime(r.createdAt, locale)}

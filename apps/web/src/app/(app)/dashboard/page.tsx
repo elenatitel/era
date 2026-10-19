@@ -409,7 +409,7 @@ function StayTable({ rows, head, cells }: { rows: StayRow[]; head: string[]; cel
           })}
         </tbody>
       </table>
-      {rows.length === 0 && <p className="px-4 py-10 text-center text-sm text-muted">{t('common.none')}</p>}
+      {rows.length === 0 && <p className="px-4 py-10 text-center font-display text-xl text-muted italic">{t('common.none')}</p>}
     </div>
   );
 }

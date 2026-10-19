@@ -71,7 +71,7 @@ function Housekeeping({ property }: { property: Property }) {
     <>
       <PageHeader
         title={t('housekeeping.title')}
-        subtitle={board.data && `${property.name} · ${date(board.data.businessDate, locale)}`}
+        eyebrow={board.data ? `${property.name} · ${date(board.data.businessDate, locale)}` : property.name}
         actions={
           manager && (
             <Button variant="secondary" loading={generate.isPending} disabled={!board.data} onClick={() => generate.mutate()}>
@@ -162,7 +162,7 @@ function Housekeeping({ property }: { property: Property }) {
           <Spinner />
         ) : !tasks.data?.length ? (
           <Card>
-            <p className="py-6 text-center text-sm text-muted">{t('housekeeping.noTasks')}</p>
+            <p className="py-8 text-center font-display text-xl text-muted italic">{t('housekeeping.noTasks')}</p>
           </Card>
         ) : (
           <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">

@@ -42,7 +42,7 @@ export default function InvitePage() {
   return (
     <form onSubmit={submit} className="space-y-5">
       <div>
-        <h1 className="text-2xl font-semibold">{t('auth.inviteTitle', { org: d.organization })}</h1>
+        <h1 className="font-display text-[32px] leading-[38px] font-medium">{t('auth.inviteTitle', { org: d.organization })}</h1>
         <p className="mt-1 text-sm text-muted">{t('auth.inviteHint', { email: d.email })}</p>
       </div>
       <ErrorText error={error} />

@@ -126,12 +126,13 @@ export function Card({ title, actions, children, className, padded = true }: { t
   );
 }
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
+export function PageHeader({ title, eyebrow, subtitle, actions }: { title: string; eyebrow?: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
+      <div className="flex min-w-0 flex-col gap-1">
+        {eyebrow && <span className="eyebrow">{eyebrow}</span>}
+        <h1 className="text-2xl leading-8 font-semibold tracking-tight text-ink">{title}</h1>
+        {subtitle && <div className="text-sm text-muted">{subtitle}</div>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
@@ -198,7 +199,7 @@ export function Table({ head, children, empty }: { head: ReactNode[]; children: 
         </thead>
         <tbody className="divide-y divide-line">{children}</tbody>
       </table>
-      {empty && <p className="px-4 py-10 text-center text-sm text-muted">{t('common.none')}</p>}
+      {empty && <p className="px-4 py-12 text-center font-display text-xl text-muted italic">{t('common.none')}</p>}
     </div>
   );
 }

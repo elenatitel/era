@@ -33,7 +33,7 @@ export default function ResetPasswordPage() {
 
   return (
     <form onSubmit={submit} className="space-y-5">
-      <h1 className="text-2xl font-semibold">{t('auth.forgotTitle')}</h1>
+      <h1 className="font-display text-[32px] leading-[38px] font-medium">{t('auth.forgotTitle')}</h1>
       {error instanceof Error && !('status' in error) ? <Alert>{error.message}</Alert> : <ErrorText error={error} />}
       {done ? (
         <Alert tone="green">{t('auth.passwordReset')}</Alert>

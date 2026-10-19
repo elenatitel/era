@@ -24,7 +24,7 @@ services:
     command: ['node', 'dist/db/migrate.js']
     environment: &api-env
       NODE_ENV: production
-      APP_NAME: ${APP_NAME:-HotelPMS}
+      APP_NAME: ${APP_NAME:-era.}
       WEB_ORIGIN: https://${DOMAIN:?set DOMAIN}
       DATABASE_URL: postgres://pms_app:${APP_DB_PASSWORD}@postgres:5432/pms
       DATABASE_MIGRATION_URL: postgres://pms_owner:${OWNER_DB_PASSWORD}@postgres:5432/pms
@@ -35,7 +35,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_SECURE: ${SMTP_SECURE:-false}
-      MAIL_FROM: ${MAIL_FROM:-HotelPMS <no-reply@localhost>}
+      MAIL_FROM: ${MAIL_FROM:-era. <no-reply@localhost>}
       PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
       PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
       TRUST_PROXY: 1
@@ -62,7 +62,7 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        NEXT_PUBLIC_APP_NAME: ${APP_NAME:-HotelPMS}
+        NEXT_PUBLIC_APP_NAME: ${APP_NAME:-era.}
     restart: unless-stopped
     depends_on: [api]
     read_only: true
