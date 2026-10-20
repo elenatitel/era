@@ -147,6 +147,22 @@ function Stay() {
 
         <GuestCard className="flex flex-col gap-2.5 p-4">
           <h2 className="text-base font-semibold">{t('guest.payment')}</h2>
+          {b.discount > 0 && (
+            <div className="flex justify-between text-sm text-success">
+              <span>{t('guest.discountLine', { code: b.promoCode ?? '' })}</span>
+              <span className="tabular-nums">−{m(b.discount)}</span>
+            </div>
+          )}
+          {b.extras.map((e) => (
+            <div key={e.name} className="flex justify-between text-sm">
+              <span className="text-muted">
+                {e.name}
+                {e.quantity > 1 && ` × ${e.quantity}`}
+                {e.included && ` · ${t('guest.included')}`}
+              </span>
+              <span className="tabular-nums">{m(e.amount)}</span>
+            </div>
+          ))}
           <div className="flex justify-between text-sm">
             <span className="text-muted">{t('guest.stayTotal')}</span>
             <span className="tabular-nums">{m(b.total)}</span>

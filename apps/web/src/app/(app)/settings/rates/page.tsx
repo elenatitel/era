@@ -11,15 +11,15 @@ import { ApiError, api } from '@/lib/api';
 import { money } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
-import type { Property, RatePlan, RoomType } from '@/lib/types';
+import type { Extra, Property, RatePlan, RoomType } from '@/lib/types';
 
 interface Grid {
   roomTypes: RoomType[];
   overrides: { roomTypeId: string; ratePlanId: string | null; date: string; price: number | null; closed: boolean }[];
 }
 
-function PlanForm({ property, plan, onDone }: { property: Property; plan?: RatePlan; onDone: () => void }) {
-  const { t } = useI18n();
+function PlanForm({ property, plan, extras, onDone }: { property: Property; plan?: RatePlan; extras: Extra[]; onDone: () => void }) {
+  const { t, locale } = useI18n();
   const [f, setF] = useState({
     name: plan?.name ?? '',
     code: plan?.code ?? '',
@@ -28,7 +28,9 @@ function PlanForm({ property, plan, onDone }: { property: Property; plan?: RateP
     adjustmentPercent: plan?.adjustmentPercent ?? 0,
     minNights: plan?.minNights ?? 1,
     active: plan?.active ?? true,
+    includedExtraIds: plan?.includedExtraIds ?? [],
   });
+  const offered = extras.filter((e) => e.active || f.includedExtraIds.includes(e.id));
   const m = useMutation({
     mutationFn: () => {
       const body = { ...f, code: f.code.toUpperCase(), description: f.description || null, adjustmentPercent: Number(f.adjustmentPercent), minNights: Number(f.minNights) };
@@ -48,6 +50,19 @@ function PlanForm({ property, plan, onDone }: { property: Property; plan?: RateP
       </div>
       <Checkbox label={t('settings.breakfast')} checked={f.includesBreakfast} onChange={(v) => setF({ ...f, includesBreakfast: v })} />
       <Checkbox label={t('common.active')} checked={f.active} onChange={(v) => setF({ ...f, active: v })} />
+      <fieldset className="space-y-2 rounded-lg border border-line p-3">
+        <legend className="px-1 text-sm font-medium">{t('extras.packageExtras')}</legend>
+        <p className="text-xs text-muted">{t('extras.packageHint')}</p>
+        {offered.length === 0 && <p className="text-xs text-muted">{t('extras.noExtras')}</p>}
+        {offered.map((e) => (
+          <Checkbox
+            key={e.id}
+            label={`${e.name} · ${money(e.price, property.currency, locale)} ${t(`extras.units.${e.unit}`).toLowerCase()}`}
+            checked={f.includedExtraIds.includes(e.id)}
+            onChange={(v) => setF({ ...f, includedExtraIds: v ? [...f.includedExtraIds, e.id] : f.includedExtraIds.filter((x) => x !== e.id) })}
+          />
+        ))}
+      </fieldset>
       <div className="flex justify-end">
         <Button type="submit" loading={m.isPending}>{t('common.save')}</Button>
       </div>
@@ -128,6 +143,8 @@ function Rates({ property }: { property: Property }) {
   const [start, setStart] = useState(property.businessDate);
   const days = Array.from({ length: 14 }, (_, i) => addDays(start, i));
   const plans = useQuery({ queryKey: ['rate-plans', property.id], queryFn: () => api.get<RatePlan[]>('/rate-plans', { propertyId: property.id }) });
+  const extras = useQuery({ queryKey: ['extras', property.id], queryFn: () => api.get<Extra[]>('/extras', { propertyId: property.id }) });
+  const extraName = (id: string) => extras.data?.find((e) => e.id === id)?.name;
   const grid = useQuery({ queryKey: ['rates', property.id, start], queryFn: () => api.get<Grid>('/rates', { propertyId: property.id, from: start, to: days[13]! }) });
   const [editPlan, setEditPlan] = useState<RatePlan | 'new' | null>(null);
   const [range, setRange] = useState(false);
@@ -146,6 +163,9 @@ function Rates({ property }: { property: Property }) {
               <Td><span className="code">{p.code}</span></Td>
               <Td>
                 {p.name} {p.includesBreakfast && <Badge tone="amber">{t('reservations.breakfast')}</Badge>}
+                {p.includedExtraIds.length > 0 && (
+                  <span className="block text-xs text-muted">{t('extras.includes', { items: p.includedExtraIds.map(extraName).filter(Boolean).join(', ') })}</span>
+                )}
               </Td>
               <Td>{p.adjustmentPercent > 0 ? '+' : ''}{p.adjustmentPercent}%</Td>
               <Td>{p.minNights}</Td>
@@ -205,6 +225,7 @@ function Rates({ property }: { property: Property }) {
           <PlanForm
             property={property}
             plan={editPlan === 'new' ? undefined : editPlan}
+            extras={extras.data ?? []}
             onDone={() => {
               setEditPlan(null);
               void qc.invalidateQueries({ queryKey: ['rate-plans'] });

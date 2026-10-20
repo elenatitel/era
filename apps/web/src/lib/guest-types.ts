@@ -14,6 +14,9 @@ export interface StayView {
     includesBreakfast: boolean;
     currency: string;
     total: number;
+    extras: { name: string; quantity: number; amount: number; included: boolean }[];
+    promoCode: string | null;
+    discount: number;
     paid: number;
     balance: number;
     awaitingPayment: boolean;

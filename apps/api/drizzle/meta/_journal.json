@@ -36,6 +36,20 @@
       "when": 1792439628818,
       "tag": "0004_guest_journey_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792490590779,
+      "tag": "0005_booking_extras_promos",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792490591747,
+      "tag": "0006_booking_extras_promos_rls",
+      "breakpoints": true
     }
   ]
 }

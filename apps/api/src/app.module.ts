@@ -15,6 +15,7 @@ import { HousekeepingModule } from './housekeeping/housekeeping.module.js';
 import { MailModule } from './mail/mail.service.js';
 import { PlatformModule } from './platform/platform.module.js';
 import { PropertiesModule } from './properties/properties.module.js';
+import { ExtrasModule } from './extras/extras.module.js';
 import { ReservationsModule } from './reservations/reservations.module.js';
 import { TenantModule } from './tenant/tenant.module.js';
 
@@ -30,6 +31,7 @@ import { TenantModule } from './tenant/tenant.module.js';
     PlatformModule,
     TenantModule,
     PropertiesModule,
+    ExtrasModule,
     GuestsModule,
     ReservationsModule,
     FinanceModule,

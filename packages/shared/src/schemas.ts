@@ -2,7 +2,9 @@ import { z } from 'zod';
 import {
   CHARGE_CATEGORIES,
   CURRENCIES,
+  DISCOUNT_TYPES,
   DOCUMENT_TYPES,
+  EXTRA_UNITS,
   GUEST_SEGMENTS,
   HK_TASK_STATUSES,
   HK_TASK_TYPES,
@@ -155,6 +157,8 @@ export const ratePlanSchema = z.object({
   adjustmentPercent: z.number().min(-90).max(500).default(0),
   minNights: z.int().min(1).max(60).default(1),
   active: z.boolean().default(true),
+  /** Package: extras included in this rate's price. */
+  includedExtraIds: z.array(z.uuid()).max(20).optional(),
 });
 export const updateRatePlanSchema = ratePlanSchema.omit({ propertyId: true }).partial();
 export const rateOverridesSchema = z.object({
@@ -363,12 +367,64 @@ export const bookingSiteSchema = z.object({
     .optional(),
 });
 
+// ---------- extras, packages and promo codes ----------
+export const extraSchema = z.object({
+  propertyId: id,
+  name: trimmed(120),
+  description: optionalText(500),
+  category: z.enum(CHARGE_CATEGORIES).default('other'),
+  unit: z.enum(EXTRA_UNITS).default('per_stay'),
+  price: money,
+  vatRate,
+  bookableOnline: z.boolean().default(true),
+  sortOrder: z.int().min(0).max(999).default(0),
+  active: z.boolean().default(true),
+});
+export const updateExtraSchema = extraSchema.omit({ propertyId: true }).partial();
+
+const promoCodeValue = z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{3,24}$/, 'Use 3–24 letters, digits, - or _');
+
+export const promoCodeSchema = z
+  .object({
+    propertyId: id,
+    code: promoCodeValue,
+    description: optionalText(300),
+    discountType: z.enum(DISCOUNT_TYPES),
+    /** Whole percent for `percent`, minor units off the stay for `fixed`. */
+    value: z.int().min(1).max(1_000_000_000),
+    stayFrom: isoDate.nullable().optional(),
+    stayTo: isoDate.nullable().optional(),
+    minNights: z.int().min(1).max(60).default(1),
+    ratePlanId: id.nullable().optional(),
+    maxUses: z.int().min(1).max(1_000_000).nullable().optional(),
+    active: z.boolean().default(true),
+  })
+  .refine((v) => v.discountType !== 'percent' || v.value <= 100, { message: 'A percentage cannot exceed 100', path: ['value'] })
+  .refine((v) => !v.stayFrom || !v.stayTo || v.stayTo >= v.stayFrom, { message: 'The end date must be after the start date', path: ['stayTo'] });
+export const updatePromoCodeSchema = z
+  .object({
+    description: optionalText(300),
+    stayFrom: isoDate.nullable(),
+    stayTo: isoDate.nullable(),
+    minNights: z.int().min(1).max(60),
+    maxUses: z.int().min(1).max(1_000_000).nullable(),
+    active: z.boolean(),
+  })
+  .partial();
+
 export const publicAvailabilitySchema = z
   .object({
     arrival: isoDate,
     departure: isoDate,
     adults: z.coerce.number().int().min(1).max(20).default(2),
     children: z.coerce.number().int().min(0).max(20).default(0),
+    promo: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .max(24)
+      .optional()
+      .transform((v) => (v ? v : undefined)),
   })
   .refine((v) => v.departure > v.arrival, { message: 'Departure must be after arrival', path: ['departure'] });
 
@@ -388,10 +444,19 @@ export const publicBookingSchema = z
     }),
     estimatedArrival: optionalText(40),
     requests: optionalText(1000),
+    extraIds: z.array(id).max(20).default([]),
+    promoCode: promoCodeValue.optional().nullable(),
+    marketingConsent: z.boolean().default(false),
     acceptTerms: z.literal(true, { error: 'Please accept the booking terms' }),
     locale: z.enum(LOCALES).default('en'),
   })
   .refine((v) => v.departure > v.arrival, { message: 'Departure must be after arrival', path: ['departure'] });
+
+/** Prices and restrictions per night for the booking calendar. */
+export const publicCalendarSchema = z
+  .object({ from: isoDate, to: isoDate })
+  .refine((v) => v.to > v.from, { message: 'The end date must be after the start date', path: ['to'] })
+  .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 <= 62, { message: 'At most 62 days at a time', path: ['to'] });
 
 export const guestCodeSchema = z.object({ code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code') });
 

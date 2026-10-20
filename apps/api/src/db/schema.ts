@@ -361,6 +361,77 @@ export const rateOverrides = pgTable(
   (t) => [unique().on(t.roomTypeId, t.ratePlanId, t.date).nullsNotDistinct()],
 );
 
+/** Add-ons a guest can buy with a stay (parking, breakfast, late check-out...). */
+export const extras = pgTable(
+  'extras',
+  {
+    id: pk(),
+    tenantId: tenantId(),
+    propertyId: uuid()
+      .notNull()
+      .references(() => properties.id, { onDelete: 'cascade' }),
+    name: text().notNull(),
+    description: text(),
+    /** Folio category the extra is posted under (CHARGE_CATEGORIES). */
+    category: text().notNull().default('other'),
+    /** per_stay | per_night | per_guest | per_guest_night */
+    unit: text().notNull().default('per_stay'),
+    price: money(),
+    vatRate: integer().notNull(),
+    /** Offered as an optional add-on on the public booking page. */
+    bookableOnline: boolean().notNull().default(true),
+    sortOrder: smallint().notNull().default(0),
+    active: boolean().notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.propertyId)],
+);
+
+/** Packages: extras included in a rate plan's price. */
+export const ratePlanExtras = pgTable(
+  'rate_plan_extras',
+  {
+    tenantId: tenantId(),
+    ratePlanId: uuid()
+      .notNull()
+      .references(() => ratePlans.id, { onDelete: 'cascade' }),
+    extraId: uuid()
+      .notNull()
+      .references(() => extras.id, { onDelete: 'cascade' }),
+  },
+  (t) => [uniqueIndex().on(t.ratePlanId, t.extraId)],
+);
+
+export const promoCodes = pgTable(
+  'promo_codes',
+  {
+    id: pk(),
+    tenantId: tenantId(),
+    propertyId: uuid()
+      .notNull()
+      .references(() => properties.id, { onDelete: 'cascade' }),
+    /** Stored upper-case; matched case-insensitively. */
+    code: text().notNull(),
+    description: text(),
+    /** percent (value = whole percent) | fixed (value = minor units off the stay) */
+    discountType: text().notNull().default('percent'),
+    value: bigint({ mode: 'number' }).notNull(),
+    /** Arrival must fall inside this window when set. */
+    stayFrom: date(),
+    stayTo: date(),
+    minNights: smallint().notNull().default(1),
+    /** Limits the code to one rate plan when set. */
+    ratePlanId: uuid().references(() => ratePlans.id, { onDelete: 'cascade' }),
+    maxUses: integer(),
+    usedCount: integer().notNull().default(0),
+    active: boolean().notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex().on(t.propertyId, t.code)],
+);
+
 export const companies = pgTable(
   'companies',
   {
@@ -412,6 +483,19 @@ export const guests = pgTable(
   (t) => [index().on(t.tenantId, t.lastName), index().on(t.tenantId, t.email)],
 );
 
+/** Snapshot of an extra on a reservation, priced when booked. */
+export interface BookedExtra {
+  extraId: string;
+  name: string;
+  unit: string;
+  unitPrice: number;
+  quantity: number;
+  amount: number;
+  vatRate: number;
+  /** Part of a package: already in the rate plan's price promise. */
+  included: boolean;
+}
+
 export interface NightlyRate {
   date: string;
   amount: number;
@@ -446,6 +530,14 @@ export const reservations = pgTable(
     currency: text().notNull().default('RON'),
     totalAmount: money(),
     nightlyRates: jsonb().$type<NightlyRate[]>().notNull().default([]),
+    /** Extras booked with the stay; included in totalAmount, posted to the folio at check-in. */
+    extras: jsonb().$type<BookedExtra[]>().notNull().default([]),
+    extrasAmount: money(),
+    promoCodeId: uuid().references(() => promoCodes.id, { onDelete: 'set null' }),
+    promoCode: text(),
+    /** Discount already taken off nightlyRates (kept for reporting). */
+    discountAmount: money(),
+    extrasPostedAt: timestamp({ withTimezone: true }),
     externalRef: text(),
     notes: text(),
     /** Online bookings awaiting payment hold their room until this time. */
@@ -656,6 +748,9 @@ export const TENANT_TABLES = [
   'rooms',
   'rate_plans',
   'rate_overrides',
+  'extras',
+  'rate_plan_extras',
+  'promo_codes',
   'companies',
   'guests',
   'reservations',

@@ -1,7 +1,7 @@
-import { and, eq, gte, isNull, lt, or, sql } from 'drizzle-orm';
-import { ACTIVE_RESERVATION_STATUSES, applyPercent, stayDates } from '@pms/shared';
+import { and, asc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { ACTIVE_RESERVATION_STATUSES, applyPercent, extraQuantity, stayDates } from '@pms/shared';
 import type { Tx } from '../db/db.service.js';
-import { ratePlans, rateOverrides, reservations, rooms, roomTypes, type NightlyRate } from '../db/schema.js';
+import { extras, promoCodes, ratePlanExtras, ratePlans, rateOverrides, reservations, rooms, roomTypes, type BookedExtra, type NightlyRate } from '../db/schema.js';
 
 type RoomType = typeof roomTypes.$inferSelect;
 type RatePlan = typeof ratePlans.$inferSelect;
@@ -102,3 +102,59 @@ export async function freeRooms(tx: Tx, roomTypeId: string, arrival: string, dep
     .orderBy(rooms.number);
 }
 
+
+// ---------------------------------------------------------------- extras, packages, promo codes
+
+type Extra = typeof extras.$inferSelect;
+type PromoCode = typeof promoCodes.$inferSelect;
+
+/** Active extras included in each rate plan (packages), keyed by rate plan id. */
+export async function packageExtras(tx: Tx, ratePlanIds: string[]) {
+  const map = new Map<string, Extra[]>();
+  if (!ratePlanIds.length) return map;
+  const rows = await tx
+    .select({ ratePlanId: ratePlanExtras.ratePlanId, extra: extras })
+    .from(ratePlanExtras)
+    .innerJoin(extras, eq(extras.id, ratePlanExtras.extraId))
+    .where(and(inArray(ratePlanExtras.ratePlanId, ratePlanIds), eq(extras.active, true)))
+    .orderBy(asc(extras.sortOrder), asc(extras.name));
+  for (const r of rows) map.set(r.ratePlanId, [...(map.get(r.ratePlanId) ?? []), r.extra]);
+  return map;
+}
+
+/** Prices an extra for a stay and snapshots it for the reservation. */
+export function bookExtra(extra: Extra, nights: number, guests: number, included: boolean): BookedExtra {
+  const quantity = extraQuantity(extra.unit, nights, guests);
+  return {
+    extraId: extra.id,
+    name: extra.name,
+    unit: extra.unit,
+    unitPrice: extra.price,
+    quantity,
+    amount: extra.price * quantity,
+    vatRate: extra.vatRate,
+    included,
+  };
+}
+
+export async function findPromo(tx: Tx, propertyId: string, code: string, lock = false) {
+  const query = tx
+    .select()
+    .from(promoCodes)
+    .where(and(eq(promoCodes.propertyId, propertyId), eq(promoCodes.code, code.trim().toUpperCase())));
+  const [promo] = lock ? await query.for('update') : await query;
+  return promo ?? null;
+}
+
+export type PromoProblem = 'not_found' | 'inactive' | 'dates' | 'min_nights' | 'rate_plan' | 'used_up';
+
+/** Why a promo code does not apply to a stay, or null when it does. */
+export function promoProblem(promo: PromoCode | null, stay: { arrival: string; nights: number; ratePlanId?: string }): PromoProblem | null {
+  if (!promo) return 'not_found';
+  if (!promo.active) return 'inactive';
+  if (promo.maxUses != null && promo.usedCount >= promo.maxUses) return 'used_up';
+  if ((promo.stayFrom && stay.arrival < promo.stayFrom) || (promo.stayTo && stay.arrival > promo.stayTo)) return 'dates';
+  if (stay.nights < promo.minNights) return 'min_nights';
+  if (stay.ratePlanId && promo.ratePlanId && promo.ratePlanId !== stay.ratePlanId) return 'rate_plan';
+  return null;
+}

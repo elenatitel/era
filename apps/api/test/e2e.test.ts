@@ -591,6 +591,113 @@ describe('guest journey: booking engine, payment and online check-in', () => {
     assert.equal((await acc.get(`/reservations/${id}`)).body.companions[0].documentNumber, '****8877');
   });
 
+  const ids: Record<string, string> = {};
+
+  test('managers set up extras, packages and promo codes; front desk cannot', async () => {
+    const fd = await login('frontdesk@demo.test');
+    const parking = { propertyId, name: 'Parking', category: 'parking', unit: 'per_night', price: 3000, vatRate: 2100 };
+    assert.equal((await fd.post('/extras', parking)).status, 403);
+    const p = await owner.post('/extras', parking);
+    assert.equal(p.status, 201, JSON.stringify(p.body));
+    ids.parking = p.body.id;
+    const b = await owner.post('/extras', { propertyId, name: 'Breakfast', category: 'food_beverage', unit: 'per_guest_night', price: 4000, vatRate: 1100, bookableOnline: false });
+    ids.breakfast = b.body.id;
+
+    const pkg = await owner.post('/rate-plans', { propertyId, name: 'Bed & Breakfast', code: 'BBPKG', includedExtraIds: [ids.breakfast] });
+    assert.equal(pkg.status, 201, JSON.stringify(pkg.body));
+    assert.deepEqual(pkg.body.includedExtraIds, [ids.breakfast]);
+    ids.package = pkg.body.id;
+    const plans = (await owner.get(`/rate-plans?propertyId=${propertyId}`)).body;
+    assert.deepEqual(plans.find((x: any) => x.id === ids.package).includedExtraIds, [ids.breakfast]);
+
+    assert.equal((await owner.post('/promo-codes', { propertyId, code: 'summer10', discountType: 'percent', value: 10 })).status, 201);
+    assert.equal((await owner.post('/promo-codes', { propertyId, code: 'SUMMER10', discountType: 'percent', value: 5 })).status, 409);
+    assert.equal((await owner.post('/promo-codes', { propertyId, code: 'TOOMUCH', discountType: 'percent', value: 150 })).status, 422);
+    const once = await owner.post('/promo-codes', { propertyId, code: 'ONCE50', discountType: 'fixed', value: 5000, maxUses: 1 });
+    assert.equal(once.body.code, 'ONCE50');
+    assert.equal((await fd.get(`/promo-codes?propertyId=${propertyId}`)).status, 200);
+  });
+
+  test('the booking engine shows the full price upfront, with packages and promo codes', async () => {
+    const guest = await client();
+    const site = (await guest.get('/public/sites/carpati')).body;
+    assert.deepEqual(site.extras.map((e: any) => e.name), ['Parking']);
+
+    const q = `arrival=${arrival}&departure=${departure}&adults=2`;
+    const plain = (await guest.get(`/public/sites/carpati/availability?${q}`)).body;
+    const dbl = plain.roomTypes.find((r: any) => r.name === 'Double Room');
+    const pkg = dbl.offers.find((o: any) => o.ratePlanId === ids.package);
+    // 2 nights at 350.00 plus breakfast for 2 guests × 2 nights at 40.00.
+    assert.equal(pkg.roomTotal, 70000);
+    assert.deepEqual(pkg.included, [{ name: 'Breakfast', amount: 16000, vatRate: 1100 }]);
+    assert.equal(pkg.total, 86000);
+    assert.equal(pkg.nightly.length, 2);
+
+    const promo = (await guest.get(`/public/sites/carpati/availability?${q}&promo=summer10`)).body;
+    assert.equal(promo.promo.valid, true);
+    const bar = promo.roomTypes.find((r: any) => r.name === 'Double Room').offers.find((o: any) => o.ratePlanId === ratePlanId);
+    assert.equal(bar.discount, 7000);
+    assert.equal(bar.total, 63000);
+    assert.equal(bar.totalBeforeDiscount, 70000);
+    const bad = (await guest.get(`/public/sites/carpati/availability?${q}&promo=NOPE1`)).body;
+    assert.deepEqual([bad.promo.valid, bad.promo.reason], [false, 'not_found']);
+
+    const cal = await guest.get(`/public/sites/carpati/calendar?from=${arrival}&to=${departure}`);
+    assert.equal(cal.status, 200, JSON.stringify(cal.body));
+    assert.equal(cal.body.days.length, 2);
+    assert.ok(cal.body.days.every((d: any) => d.from > 0 && d.from <= 35000 && d.minNights === 1 && !d.closed));
+    assert.equal((await guest.get(`/public/sites/carpati/calendar?from=${arrival}&to=${addDays(arrival, 90)}`)).status, 422);
+    // A cheaper rate that needs two nights does not set the one-night "from" price.
+    const longStay = await owner.post('/rate-plans', { propertyId, name: 'Stay longer', code: 'LONG2', adjustmentPercent: -50, minNights: 2 });
+    assert.equal(longStay.status, 201);
+    const cal2 = (await guest.get(`/public/sites/carpati/calendar?from=${arrival}&to=${departure}`)).body;
+    assert.deepEqual(cal2.days.map((d: any) => d.from), cal.body.days.map((d: any) => d.from));
+    await owner.patch(`/rate-plans/${longStay.body.id}`, { active: false });
+  });
+
+  test('a booking with extras and a promo code is priced, limited and posted at check-in', async () => {
+    const guest = await client();
+    const res = await guest.post(
+      '/public/sites/carpati/bookings',
+      bookingBody('extras.guest@example.com', { extraIds: [ids.parking], promoCode: 'summer10', marketingConsent: true }),
+    );
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    // Rooms 700.00 − 10% = 630.00, parking 2 nights × 30.00.
+    assert.equal(res.body.total, 69000);
+    const staff = (await owner.get(`/reservations?propertyId=${propertyId}&q=${res.body.code}`)).body.items[0];
+    const detail = (await owner.get(`/reservations/${staff.id}`)).body;
+    assert.equal(detail.promoCode, 'SUMMER10');
+    assert.equal(detail.discountAmount, 7000);
+    assert.equal(detail.extrasAmount, 6000);
+    assert.deepEqual(detail.extras.map((e: any) => [e.name, e.quantity, e.amount]), [['Parking', 2, 6000]]);
+    const view = (await guest.get(`/public/stay/${res.body.token}`)).body;
+    assert.equal(view.booking.discount, 7000);
+    assert.equal(view.booking.extras[0].name, 'Parking');
+
+    // Package-only extras cannot be added on their own; fixed codes respect their limit.
+    assert.equal((await guest.post('/public/sites/carpati/bookings', bookingBody('x1@example.com', { extraIds: [ids.breakfast] }))).status, 422);
+    assert.equal((await guest.post('/public/sites/carpati/bookings', bookingBody('x2@example.com', { promoCode: 'ONCE50' }))).body.total, 65000);
+    const used = await guest.post('/public/sites/carpati/bookings', bookingBody('x3@example.com', { promoCode: 'ONCE50' }));
+    assert.equal(used.status, 422);
+    assert.equal(used.body.error.details.reason, 'used_up');
+
+    // Extras reach the folio once, when the guest checks in.
+    const today = (await owner.get(`/properties/${propertyId}`)).body.businessDate;
+    const now = await guest.post(
+      '/public/sites/carpati/bookings',
+      bookingBody('checkin.extras@example.com', { arrival: today, departure: addDays(today, 1), extraIds: [ids.parking] }),
+    );
+    assert.equal(now.status, 201, JSON.stringify(now.body));
+    const r = (await owner.get(`/reservations?propertyId=${propertyId}&q=${now.body.code}`)).body.items[0];
+    const room = (await owner.get(`/reservations/${r.id}/free-rooms`)).body[0];
+    assert.equal((await owner.post(`/reservations/${r.id}/check-in`, { roomId: room.id, allowDirtyRoom: true })).status, 200);
+    const folio = (await owner.get(`/reservations/${r.id}`)).body.folio;
+    const parkingLines = folio.filter((f: any) => f.description === 'Parking');
+    assert.equal(parkingLines.length, 1);
+    assert.equal(parkingLines[0].amount, 3000);
+    assert.equal(parkingLines[0].category, 'parking');
+  });
+
   test('with Stripe, the room is held until payment; a signed webhook confirms it once', async () => {
     const cfg = await owner.put(`/properties/${propertyId}/online-booking`, {
       slug: 'carpati',

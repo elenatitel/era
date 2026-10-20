@@ -1,6 +1,6 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Tx } from '../db/db.service.js';
-import { folioItems, payments, properties, reservations } from '../db/schema.js';
+import { extras, folioItems, payments, properties, reservations } from '../db/schema.js';
 
 type Reservation = typeof reservations.$inferSelect;
 type Property = typeof properties.$inferSelect;
@@ -32,6 +32,41 @@ export async function postRoomCharges(tx: Tx, reservation: Reservation, property
     .onConflictDoNothing()
     .returning({ id: folioItems.id });
   return inserted.length;
+}
+
+/**
+ * Posts the extras booked with the stay (packages and add-ons) to the folio, once.
+ * Runs at check-in; check-out calls it too for stays checked in before extras existed.
+ */
+export async function postBookedExtras(tx: Tx, reservation: Reservation, userId?: string) {
+  if (!reservation.extras.length) return 0;
+  const [claimed] = await tx
+    .update(reservations)
+    .set({ extrasPostedAt: new Date() })
+    .where(and(eq(reservations.id, reservation.id), isNull(reservations.extrasPostedAt)))
+    .returning({ id: reservations.id });
+  if (!claimed) return 0;
+  // Category comes from the live extra; a deleted extra falls back to "other".
+  const rows = await tx
+    .select({ id: extras.id, category: extras.category })
+    .from(extras)
+    .where(inArray(extras.id, reservation.extras.map((e) => e.extraId)));
+  const categories = new Map(rows.map((r) => [r.id, r.category]));
+  await tx.insert(folioItems).values(
+    reservation.extras.map((e) => ({
+      tenantId: reservation.tenantId,
+      reservationId: reservation.id,
+      category: categories.get(e.extraId) ?? 'other',
+      description: e.included ? `${e.name} (package)` : e.name,
+      quantity: e.quantity,
+      unitPrice: e.unitPrice,
+      amount: e.amount,
+      vatRate: e.vatRate,
+      serviceDate: reservation.arrival,
+      postedById: userId ?? null,
+    })),
+  );
+  return reservation.extras.length;
 }
 
 export async function folioTotals(tx: Tx, reservationId: string) {

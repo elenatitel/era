@@ -60,5 +60,13 @@ export const ERROR_CODES = {
   ROOM_CONFLICT: 'ROOM_CONFLICT',
   OUTSTANDING_BALANCE: 'OUTSTANDING_BALANCE',
   INVALID_STATE: 'INVALID_STATE',
+  PROMO_INVALID: 'PROMO_INVALID',
   CSRF: 'CSRF',
 } as const;
+
+/** How an extra is priced: once, per night, per guest, or per guest per night. */
+export const EXTRA_UNITS = ['per_stay', 'per_night', 'per_guest', 'per_guest_night'] as const;
+export type ExtraUnit = (typeof EXTRA_UNITS)[number];
+
+export const DISCOUNT_TYPES = ['percent', 'fixed'] as const;
+export type DiscountType = (typeof DISCOUNT_TYPES)[number];

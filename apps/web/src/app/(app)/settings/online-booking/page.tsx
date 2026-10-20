@@ -4,10 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, ExternalLink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PropertyGate } from '@/components/property-gate';
-import { Alert, Badge, Button, Card, Checkbox, ErrorText, Field, Input, PageHeader, Spinner } from '@/components/ui';
+import { Alert, Badge, Button, Card, Checkbox, ErrorText, Field, Input, PageHeader, Select, Spinner } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
-import type { Property } from '@/lib/types';
+import type { PromoCode, Property, RatePlan, RoomType } from '@/lib/types';
 
 interface Settings {
   slug: string | null;
@@ -53,6 +53,73 @@ function CopyField({ label, value }: { label: string; value: string }) {
         </div>
       )}
     </Field>
+  );
+}
+
+/** Builds booking links with dates, guests, room, rate, promo code and language pre-filled. */
+function LinkBuilder({ property, bookingUrl }: { property: Property; bookingUrl: string }) {
+  const { t } = useI18n();
+  const rooms = useQuery({ queryKey: ['room-types', property.id], queryFn: () => api.get<RoomType[]>('/room-types', { propertyId: property.id }) });
+  const plans = useQuery({ queryKey: ['rate-plans', property.id], queryFn: () => api.get<RatePlan[]>('/rate-plans', { propertyId: property.id }) });
+  const promos = useQuery({ queryKey: ['promo-codes', property.id], queryFn: () => api.get<PromoCode[]>('/promo-codes', { propertyId: property.id }) });
+  const [f, setF] = useState({ arrival: '', departure: '', adults: '2', children: '0', room: '', rate: '', promo: '', lang: '' });
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(f)) if (v && !(k === 'adults' && v === '2') && !(k === 'children' && v === '0')) params.set(k, v);
+  const url = params.size ? `${bookingUrl}?${params}` : bookingUrl;
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  return (
+    <Card title={t('extras.linkBuilder')}>
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-muted">{t('extras.linkHint')}</p>
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
+          <Field label={t('guest.arrival')}>{(id) => <Input id={id} type="date" min={property.businessDate} value={f.arrival} onChange={set('arrival')} />}</Field>
+          <Field label={t('guest.departure')}>{(id) => <Input id={id} type="date" min={f.arrival || property.businessDate} value={f.departure} onChange={set('departure')} />}</Field>
+          <Field label={t('guest.adults')}>
+            {(id) => <Select id={id} value={f.adults} onChange={set('adults')}>{[1, 2, 3, 4, 5, 6].map((n) => <option key={n}>{n}</option>)}</Select>}
+          </Field>
+          <Field label={t('guest.children')}>
+            {(id) => <Select id={id} value={f.children} onChange={set('children')}>{[0, 1, 2, 3, 4].map((n) => <option key={n}>{n}</option>)}</Select>}
+          </Field>
+          <Field label={t('reservations.roomType')}>
+            {(id) => (
+              <Select id={id} value={f.room} onChange={set('room')}>
+                <option value="">{t('extras.anyRoom')}</option>
+                {rooms.data?.filter((r) => r.active).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </Select>
+            )}
+          </Field>
+          <Field label={t('reservations.ratePlan')}>
+            {(id) => (
+              <Select id={id} value={f.rate} onChange={set('rate')}>
+                <option value="">{t('extras.anyRate')}</option>
+                {plans.data?.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </Select>
+            )}
+          </Field>
+          <Field label={t('guest.promoCode')}>
+            {(id) => (
+              <Select id={id} value={f.promo} onChange={set('promo')}>
+                <option value="">{t('extras.noPromo')}</option>
+                {promos.data?.filter((p) => p.active).map((p) => <option key={p.id} value={p.code}>{p.code}</option>)}
+              </Select>
+            )}
+          </Field>
+          <Field label={t('extras.language')}>
+            {(id) => (
+              <Select id={id} value={f.lang} onChange={set('lang')}>
+                <option value="">—</option>
+                <option value="en">English</option>
+                <option value="ro">Română</option>
+              </Select>
+            )}
+          </Field>
+        </div>
+        <CopyField label={t('online.bookingUrl')} value={url} />
+        <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 self-start text-sm text-accent hover:underline">
+          <ExternalLink size={14} /> {t('extras.open')}
+        </a>
+      </div>
+    </Card>
   );
 }
 
@@ -139,6 +206,11 @@ function OnlineBooking({ property }: { property: Property }) {
           </Button>
         </div>
       </form>
+      {d.bookingUrl && d.enabled && (
+        <div className="mt-6 max-w-3xl">
+          <LinkBuilder property={property} bookingUrl={d.bookingUrl} />
+        </div>
+      )}
     </>
   );
 }

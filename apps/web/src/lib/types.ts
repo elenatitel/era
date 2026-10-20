@@ -63,6 +63,48 @@ export interface RatePlan {
   adjustmentPercent: number;
   minNights: number;
   active: boolean;
+  includedExtraIds: string[];
+}
+
+export interface Extra {
+  id: string;
+  propertyId: string;
+  name: string;
+  description: string | null;
+  category: string;
+  unit: 'per_stay' | 'per_night' | 'per_guest' | 'per_guest_night';
+  price: number;
+  vatRate: number;
+  bookableOnline: boolean;
+  sortOrder: number;
+  active: boolean;
+}
+
+export interface PromoCode {
+  id: string;
+  propertyId: string;
+  code: string;
+  description: string | null;
+  discountType: 'percent' | 'fixed';
+  value: number;
+  stayFrom: string | null;
+  stayTo: string | null;
+  minNights: number;
+  ratePlanId: string | null;
+  maxUses: number | null;
+  usedCount: number;
+  active: boolean;
+}
+
+export interface BookedExtra {
+  extraId: string;
+  name: string;
+  unit: string;
+  unitPrice: number;
+  quantity: number;
+  amount: number;
+  vatRate: number;
+  included: boolean;
 }
 
 export interface Guest {
@@ -167,6 +209,11 @@ export interface ReservationDetail {
   currency: string;
   totalAmount: number;
   nightlyRates: { date: string; amount: number }[];
+  extras: BookedExtra[];
+  extrasAmount: number;
+  promoCode: string | null;
+  discountAmount: number;
+  extrasPostedAt: string | null;
   notes: string | null;
   externalRef: string | null;
   cancelReason: string | null;

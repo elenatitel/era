@@ -51,3 +51,25 @@ test('password policy', () => {
   assert.ok(!password.safeParse('onlylettersherexx').success);
   assert.ok(password.safeParse('correct horse 42 battery').success);
 });
+
+test('extra quantity by unit', async () => {
+  const { extraQuantity } = await import('./money.js');
+  assert.equal(extraQuantity('per_stay', 3, 2), 1);
+  assert.equal(extraQuantity('per_night', 3, 2), 3);
+  assert.equal(extraQuantity('per_guest', 3, 2), 2);
+  assert.equal(extraQuantity('per_guest_night', 3, 2), 6);
+});
+
+test('promo discounts', async () => {
+  const { applyDiscount } = await import('./money.js');
+  const nights = [{ date: 'a', amount: 10000 }, { date: 'b', amount: 10000 }, { date: 'c', amount: 5000 }];
+  const pct = applyDiscount(nights, 'percent', 10);
+  assert.deepEqual(pct.nights.map((n) => n.amount), [9000, 9000, 4500]);
+  assert.equal(pct.discount, 2500);
+  const fixed = applyDiscount(nights, 'fixed', 10001);
+  assert.equal(fixed.discount, 10001);
+  assert.equal(fixed.nights.reduce((s, n) => s + n.amount, 0), 14999);
+  const capped = applyDiscount(nights, 'fixed', 99999);
+  assert.equal(capped.discount, 25000);
+  assert.ok(capped.nights.every((n) => n.amount === 0));
+});

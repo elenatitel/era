@@ -1,15 +1,24 @@
 import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { and, eq, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, lt, sql } from 'drizzle-orm';
 import type { Response } from 'express';
 import type { z } from 'zod';
-import { addDays, nightsBetween, type publicAvailabilitySchema, type publicBookingSchema } from '@pms/shared';
+import {
+  addDays,
+  applyDiscount,
+  nightsBetween,
+  stayDates,
+  type publicAvailabilitySchema,
+  type publicBookingSchema,
+  type publicCalendarSchema,
+} from '@pms/shared';
 import { config } from '../config.js';
 import { ctx } from '../common/context.js';
 import { decrypt, decryptNullable, encrypt, randomToken, sha256 } from '../common/crypto.js';
 import { notFound, unprocessable } from '../common/errors.js';
 import { AuditService } from '../db/audit.service.js';
 import { DbService, type Tx } from '../db/db.service.js';
-import { bookingSites, guestLinks, guests, payments, properties, ratePlans, reservations, roomTypes, tenants } from '../db/schema.js';
+import { bookingSites, extras, guestLinks, guests, payments, properties, ratePlans, reservations, roomTypes, tenants } from '../db/schema.js';
+import { availability as roomAvailability, bookExtra, findPromo, packageExtras, promoProblem, quote } from '../properties/pricing.js';
 import { MailService } from '../mail/mail.service.js';
 import { ReservationsService } from '../reservations/reservations.service.js';
 import { setGuestSession } from './guest-session.js';
@@ -67,6 +76,13 @@ export class PublicBookingService {
 
   async info(slug: string) {
     const { site, property } = await this.resolve(slug);
+    const addOns = await this.db.tenant((tx) =>
+      tx
+        .select()
+        .from(extras)
+        .where(and(eq(extras.propertyId, property.id), eq(extras.active, true), eq(extras.bookableOnline, true)))
+        .orderBy(asc(extras.sortOrder), asc(extras.name)),
+    );
     return {
       slug: site.slug,
       name: property.name,
@@ -81,20 +97,33 @@ export class PublicBookingService {
       earliestArrival: property.businessDate,
       accommodationVatRate: property.accommodationVatRate,
       payments: paymentsEnabled(property) ? { provider: 'stripe', publishableKey: property.stripePublishableKey } : null,
+      extras: addOns.map((e) => ({ id: e.id, name: e.name, description: e.description, unit: e.unit, price: e.price, vatRate: e.vatRate })),
     };
   }
 
+  /**
+   * Offers with the full price upfront: room nights (after any promo), package extras
+   * included in the rate, and the total the guest will pay. Prices include VAT.
+   */
   async availability(slug: string, q: z.infer<typeof publicAvailabilitySchema>) {
     const { property } = await this.resolve(slug);
     if (q.arrival < property.businessDate) throw unprocessable('Arrival cannot be in the past');
     await this.db.tenant((tx) => releaseExpiredHolds(tx, property.id));
     const result = await this.reservations.searchAvailability({ propertyId: property.id, arrival: q.arrival, departure: q.departure, adults: q.adults + q.children });
     const nights = nightsBetween(q.arrival, q.departure);
+    const guestCount = q.adults + q.children;
+    const { packages, promo } = await this.db.tenant(async (tx) => ({
+      packages: await packageExtras(tx, [...new Set(result.roomTypes.flatMap((r) => r.offers.map((o) => o.ratePlanId)))]),
+      promo: q.promo ? await findPromo(tx, property.id, q.promo) : null,
+    }));
+    // A code that fails for the stay itself is reported once; one limited to another rate simply doesn't apply there.
+    const stayProblem = q.promo ? promoProblem(promo, { arrival: q.arrival, nights }) : null;
     return {
       arrival: q.arrival,
       departure: q.departure,
       nights,
       currency: property.currency,
+      promo: q.promo ? { code: q.promo, valid: !stayProblem, reason: stayProblem, description: stayProblem ? null : (promo?.description ?? null) } : null,
       roomTypes: result.roomTypes
         .filter((r) => r.fitsOccupancy)
         .map((r) => ({
@@ -107,10 +136,68 @@ export class PublicBookingService {
             r.available > 0
               ? r.offers
                   .filter((o) => o.sellable)
-                  .map((o) => ({ ratePlanId: o.ratePlanId, name: o.ratePlanName, includesBreakfast: o.includesBreakfast, total: o.total, perNight: Math.round(o.total / nights) }))
+                  .map((o) => {
+                    const applies = promo && !stayProblem && !promoProblem(promo, { arrival: q.arrival, nights, ratePlanId: o.ratePlanId });
+                    const discounted = applies ? applyDiscount(o.nightlyRates, promo.discountType, promo.value) : { nights: o.nightlyRates, discount: 0 };
+                    const included = (packages.get(o.ratePlanId) ?? []).map((e) => bookExtra(e, nights, guestCount, true));
+                    const roomTotal = discounted.nights.reduce((sum, n) => sum + n.amount, 0);
+                    const total = roomTotal + included.reduce((sum, e) => sum + e.amount, 0);
+                    return {
+                      ratePlanId: o.ratePlanId,
+                      name: o.ratePlanName,
+                      includesBreakfast: o.includesBreakfast,
+                      nightly: discounted.nights,
+                      roomTotal,
+                      discount: discounted.discount,
+                      totalBeforeDiscount: total + discounted.discount,
+                      included: included.map((e) => ({ name: e.name, amount: e.amount, vatRate: e.vatRate })),
+                      total,
+                      perNight: Math.round(total / nights),
+                    };
+                  })
               : [],
         })),
     };
+  }
+
+  /**
+   * One-night prices and restrictions per date, for the booking calendar: the lowest
+   * VAT-inclusive price of any sellable offer, the shortest minimum stay, and closed dates.
+   */
+  async calendar(slug: string, q: z.infer<typeof publicCalendarSchema>) {
+    const { property } = await this.resolve(slug);
+    const from = q.from < property.businessDate ? property.businessDate : q.from;
+    if (from >= q.to) return { currency: property.currency, days: [] };
+    return this.db.tenant(async (tx) => {
+      await releaseExpiredHolds(tx, property.id);
+      const types = await tx.select().from(roomTypes).where(and(eq(roomTypes.propertyId, property.id), eq(roomTypes.active, true)));
+      const plans = await tx.select().from(ratePlans).where(and(eq(ratePlans.propertyId, property.id), eq(ratePlans.active, true)));
+      const rows = await roomAvailability(tx, property.id, from, q.to);
+      const packages = await packageExtras(tx, plans.map((p) => p.id));
+      const days = new Map(stayDates(from, q.to).map((date) => [date, { date, from: null as number | null, minNights: null as number | null }]));
+      for (const rt of types) {
+        for (const plan of plans) {
+          const qt = await quote(tx, rt, plan, from, q.to);
+          // Package extras for one guest and one night; enough for a "from" price.
+          const extra = (packages.get(plan.id) ?? []).reduce((sum, e) => sum + bookExtra(e, 1, 1, true).amount, 0);
+          for (const n of qt.nightlyRates) {
+            const free = rows.find((a) => a.roomTypeId === rt.id && a.date === n.date);
+            if (!free || free.total - free.booked < 1 || qt.closedDates.includes(n.date)) continue;
+            // The "from" price belongs to the shortest stay possible that night, so a cheaper
+            // rate with a longer minimum stay never advertises a price a one-night guest can't get.
+            const day = days.get(n.date)!;
+            const price = n.amount + extra;
+            if (day.minNights == null || plan.minNights < day.minNights) {
+              day.minNights = plan.minNights;
+              day.from = price;
+            } else if (plan.minNights === day.minNights) {
+              day.from = Math.min(day.from!, price);
+            }
+          }
+        }
+      }
+      return { currency: property.currency, days: [...days.values()].map((d) => ({ ...d, closed: d.from == null })) };
+    });
   }
 
   async book(slug: string, input: z.infer<typeof publicBookingSchema>, res: Response) {
@@ -155,7 +242,7 @@ export class PublicBookingService {
               companyId: null,
               tags: [],
               notes: null,
-              marketingConsent: false,
+              marketingConsent: input.marketingConsent,
             },
           }),
       companyId: null,
@@ -164,7 +251,12 @@ export class PublicBookingService {
       totalOverride: null,
       externalRef: null,
       notes: null,
-    });
+    }, { extraIds: input.extraIds, promoCode: input.promoCode });
+
+    // Opting in again on a later booking counts; an unticked box never withdraws earlier consent.
+    if (existing && input.marketingConsent) {
+      await this.db.tenant((tx) => tx.update(guests).set({ marketingConsent: true }).where(eq(guests.id, existing.id)));
+    }
 
     const token = randomToken(32);
     const link = await this.db.db

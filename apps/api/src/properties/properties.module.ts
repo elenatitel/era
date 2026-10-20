@@ -23,7 +23,7 @@ import { IdParam, ZBody, ZQuery } from '../common/zod.js';
 import { Perms } from '../auth/decorators.js';
 import { AuditService } from '../db/audit.service.js';
 import { DbService, type Tx } from '../db/db.service.js';
-import { documentSeries, properties, rateOverrides, ratePlans, rooms, roomTypes } from '../db/schema.js';
+import { documentSeries, extras, properties, rateOverrides, ratePlanExtras, ratePlans, rooms, roomTypes } from '../db/schema.js';
 
 type PropertyInput = z.infer<typeof propertySchema>;
 
@@ -196,16 +196,39 @@ export class PropertiesService {
   listRatePlans(propertyId: string) {
     return this.db.tenant(async (tx) => {
       await getAccessibleProperty(tx, propertyId);
-      return tx.select().from(ratePlans).where(eq(ratePlans.propertyId, propertyId)).orderBy(asc(ratePlans.name));
+      const plans = await tx.select().from(ratePlans).where(eq(ratePlans.propertyId, propertyId)).orderBy(asc(ratePlans.name));
+      const links = plans.length
+        ? await tx.select().from(ratePlanExtras).where(inArray(ratePlanExtras.ratePlanId, plans.map((p) => p.id)))
+        : [];
+      return plans.map((p) => ({ ...p, includedExtraIds: links.filter((l) => l.ratePlanId === p.id).map((l) => l.extraId) }));
     });
+  }
+
+  /** Packages: replaces the extras included in a rate plan's price. */
+  private async setPackageExtras(tx: Tx, plan: { id: string; propertyId: string }, extraIds: string[]) {
+    const unique = [...new Set(extraIds)];
+    if (unique.length) {
+      const found = await tx
+        .select({ id: extras.id })
+        .from(extras)
+        .where(and(inArray(extras.id, unique), eq(extras.propertyId, plan.propertyId)));
+      if (found.length !== unique.length) throw unprocessable('Some extras were not found for this property');
+    }
+    await tx.delete(ratePlanExtras).where(eq(ratePlanExtras.ratePlanId, plan.id));
+    if (unique.length) {
+      await tx.insert(ratePlanExtras).values(unique.map((extraId) => ({ tenantId: requireTenant(), ratePlanId: plan.id, extraId })));
+    }
+    return unique;
   }
 
   createRatePlan(input: z.infer<typeof ratePlanSchema>) {
     return this.db.tenant(async (tx) => {
       await getAccessibleProperty(tx, input.propertyId);
-      const [plan] = await tx.insert(ratePlans).values({ ...input, tenantId: requireTenant() }).returning();
-      await this.audit.log(tx, 'rate_plan.created', 'rate_plan', plan!.id, { code: plan!.code });
-      return plan;
+      const { includedExtraIds, ...values } = input;
+      const [plan] = await tx.insert(ratePlans).values({ ...values, tenantId: requireTenant() }).returning();
+      const included = await this.setPackageExtras(tx, plan!, includedExtraIds ?? []);
+      await this.audit.log(tx, 'rate_plan.created', 'rate_plan', plan!.id, { code: plan!.code, includedExtraIds: included });
+      return { ...plan!, includedExtraIds: included };
     });
   }
 
@@ -214,9 +237,14 @@ export class PropertiesService {
       const [existing] = await tx.select().from(ratePlans).where(eq(ratePlans.id, id));
       if (!existing) throw notFound('Rate plan');
       await getAccessibleProperty(tx, existing.propertyId);
-      const [plan] = await tx.update(ratePlans).set(input).where(eq(ratePlans.id, id)).returning();
+      const { includedExtraIds, ...values } = input;
+      const [plan] = Object.keys(values).length ? await tx.update(ratePlans).set(values).where(eq(ratePlans.id, id)).returning() : [existing];
+      const included =
+        includedExtraIds !== undefined
+          ? await this.setPackageExtras(tx, existing, includedExtraIds)
+          : (await tx.select().from(ratePlanExtras).where(eq(ratePlanExtras.ratePlanId, id))).map((l) => l.extraId);
       await this.audit.log(tx, 'rate_plan.updated', 'rate_plan', id, input);
-      return plan;
+      return { ...plan!, includedExtraIds: included };
     });
   }
 

@@ -3,7 +3,15 @@ import { Throttle } from '@nestjs/throttler';
 import { and, eq, ne } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { bookingSiteSchema, guestCodeSchema, onlineCheckinSchema, publicAvailabilitySchema, publicBookingSchema, slug as slugSchema } from '@pms/shared';
+import {
+  bookingSiteSchema,
+  guestCodeSchema,
+  onlineCheckinSchema,
+  publicAvailabilitySchema,
+  publicBookingSchema,
+  publicCalendarSchema,
+  slug as slugSchema,
+} from '@pms/shared';
 import { config } from '../config.js';
 import { requireTenant } from '../common/context.js';
 import { encryptNullable } from '../common/crypto.js';
@@ -40,6 +48,12 @@ export class PublicController {
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   availability(@SlugParam() slug: string, @ZQuery(publicAvailabilitySchema) q: z.infer<typeof publicAvailabilitySchema>) {
     return this.booking.availability(slug, q);
+  }
+
+  @Get('sites/:slug/calendar')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  calendar(@SlugParam() slug: string, @ZQuery(publicCalendarSchema) q: z.infer<typeof publicCalendarSchema>) {
+    return this.booking.calendar(slug, q);
   }
 
   @Post('sites/:slug/bookings')

@@ -176,6 +176,28 @@ export default function ReservationPage() {
             <dd className="font-semibold">{r.room?.number ?? '—'}</dd>
             <dt className="text-muted">{t('reservations.ratePlan')}</dt>
             <dd>{r.ratePlan.name}</dd>
+            {r.promoCode && (
+              <>
+                <dt className="text-muted">{t('guest.promoCode')}</dt>
+                <dd>
+                  <span className="code">{r.promoCode}</span> · −{m(r.discountAmount)}
+                </dd>
+              </>
+            )}
+            {r.extras.length > 0 && (
+              <>
+                <dt className="text-muted">{t('guest.stayExtras')}</dt>
+                <dd>
+                  {r.extras.map((e) => (
+                    <span key={e.extraId} className="block">
+                      {e.name}
+                      {e.quantity > 1 && ` × ${e.quantity}`} · {m(e.amount)}
+                      {e.included && <span className="text-muted"> · {t('guest.included')}</span>}
+                    </span>
+                  ))}
+                </dd>
+              </>
+            )}
             <dt className="text-muted">{t('common.total')}</dt>
             <dd className="font-semibold">{m(r.totalAmount)}</dd>
           </dl>

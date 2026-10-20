@@ -6,6 +6,7 @@ import {
   ACTIVE_RESERVATION_STATUSES,
   ERROR_CODES,
   addDays,
+  applyDiscount,
   availabilitySchema,
   createReservationSchema,
   nightsBetween,
@@ -19,6 +20,7 @@ import { AuditService } from '../db/audit.service.js';
 import { DbService, type Tx } from '../db/db.service.js';
 import {
   companies,
+  extras,
   folioItems,
   guests,
   housekeepingTasks,
@@ -26,17 +28,18 @@ import {
   payments,
   properties,
   reservationGuests,
+  promoCodes,
   ratePlans,
   reservations,
   rooms,
   roomTypes,
   users,
 } from '../db/schema.js';
-import { folioTotals, postRoomCharges } from '../finance/folio.js';
+import { folioTotals, postBookedExtras, postRoomCharges } from '../finance/folio.js';
 import { assertCompany, insertGuest, presentGuest } from '../guests/guests.module.js';
 import { decryptNullable, mask } from '../common/crypto.js';
 import { getAccessibleProperty } from '../properties/properties.module.js';
-import { availability, freeRooms, minFree, quote } from '../properties/pricing.js';
+import { availability, bookExtra, findPromo, freeRooms, minFree, packageExtras, promoProblem, quote } from '../properties/pricing.js';
 
 type Reservation = typeof reservations.$inferSelect;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -116,7 +119,11 @@ export class ReservationsService {
 
   // ---------------------------------------------------------------- create
 
-  create(input: z.infer<typeof createReservationSchema>) {
+  /**
+   * `options` carries what only the booking engine sends today: optional extras (must be
+   * bookable online) and a promo code. Package extras of the rate plan are always added.
+   */
+  create(input: z.infer<typeof createReservationSchema>, options: { extraIds?: string[]; promoCode?: string | null } = {}) {
     if (input.totalOverride != null && !hasPermission('rates.manage')) {
       throw forbidden('Overriding the price requires the rates.manage permission');
     }
@@ -155,7 +162,34 @@ export class ReservationsService {
           amount: i === nights - 1 ? input.totalOverride! - per * (nights - 1) : per,
         }));
       }
-      const totalAmount = nightlyRates.reduce((s, n) => s + n.amount, 0);
+
+      // Promo codes discount the room nights only, so night audit posts the discounted rates.
+      let promo: typeof promoCodes.$inferSelect | null = null;
+      let discountAmount = 0;
+      if (options.promoCode && input.totalOverride == null) {
+        promo = await findPromo(tx, property.id, options.promoCode, true);
+        const problem = promoProblem(promo, { arrival: input.arrival, nights, ratePlanId: plan.id });
+        if (problem) throw unprocessable('This promo code cannot be used for this stay', { code: ERROR_CODES.PROMO_INVALID, reason: problem });
+        const applied = applyDiscount(nightlyRates, promo!.discountType, promo!.value);
+        nightlyRates = applied.nights;
+        discountAmount = applied.discount;
+        await tx.update(promoCodes).set({ usedCount: sql`${promoCodes.usedCount} + 1` }).where(eq(promoCodes.id, promo!.id));
+      }
+
+      const guestCount = input.adults + input.children;
+      const included = (await packageExtras(tx, [plan.id])).get(plan.id) ?? [];
+      const bookedExtras = included.map((e) => bookExtra(e, nights, guestCount, true));
+      const optionalIds = [...new Set(options.extraIds ?? [])].filter((id) => !included.some((e) => e.id === id));
+      if (optionalIds.length) {
+        const chosen = await tx
+          .select()
+          .from(extras)
+          .where(and(inArray(extras.id, optionalIds), eq(extras.propertyId, property.id), eq(extras.active, true), eq(extras.bookableOnline, true)));
+        if (chosen.length !== optionalIds.length) throw unprocessable('Some of the selected extras are no longer available');
+        bookedExtras.push(...chosen.map((e) => bookExtra(e, nights, guestCount, false)));
+      }
+      const extrasAmount = bookedExtras.reduce((s, e) => s + e.amount, 0);
+      const totalAmount = nightlyRates.reduce((s, n) => s + n.amount, 0) + extrasAmount;
 
       if (input.roomId) await this.assertRoomForType(tx, input.roomId, rt.id);
       await assertCompany(tx, input.companyId);
@@ -188,6 +222,11 @@ export class ReservationsService {
           currency: property.currency,
           totalAmount,
           nightlyRates,
+          extras: bookedExtras,
+          extrasAmount,
+          promoCodeId: promo?.id ?? null,
+          promoCode: promo?.code ?? null,
+          discountAmount,
           externalRef: input.externalRef,
           notes: input.notes,
           createdById: ctx().userId,
@@ -199,6 +238,8 @@ export class ReservationsService {
         departure: input.departure,
         total: totalAmount,
         override: input.totalOverride != null,
+        ...(promo ? { promo: promo.code, discount: discountAmount } : {}),
+        ...(bookedExtras.length ? { extras: bookedExtras.map((e) => e.name) } : {}),
       });
       return created!;
     });
@@ -391,6 +432,7 @@ export class ReservationsService {
         .where(eq(reservations.id, id))
         .returning();
       await tx.update(rooms).set({ occupancy: 'occupied' }).where(eq(rooms.id, roomId));
+      await postBookedExtras(tx, reservation, ctx().userId);
       await this.audit.log(tx, 'reservation.checked_in', 'reservation', id, { room: room.number, dirty: room.status === 'dirty' });
       return updated;
     });
@@ -411,11 +453,12 @@ export class ReservationsService {
         const nightlyRates = reservation.nightlyRates.filter((n) => n.date < actualDeparture);
         await tx
           .update(reservations)
-          .set({ departure: actualDeparture, nightlyRates, totalAmount: nightlyRates.reduce((s, n) => s + n.amount, 0) })
+          .set({ departure: actualDeparture, nightlyRates, totalAmount: nightlyRates.reduce((s, n) => s + n.amount, 0) + reservation.extrasAmount })
           .where(eq(reservations.id, id));
         reservation.nightlyRates = nightlyRates;
       }
       await postRoomCharges(tx, reservation, property, actualDeparture, ctx().userId);
+      await postBookedExtras(tx, reservation, ctx().userId);
       const totals = await folioTotals(tx, id);
       if (totals.balance > 0 && !allowOpenBalance) {
         throw conflict(ERROR_CODES.OUTSTANDING_BALANCE, 'The folio has an outstanding balance', totals);
