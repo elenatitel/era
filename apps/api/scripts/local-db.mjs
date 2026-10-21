@@ -2,9 +2,11 @@
 // Usage: node scripts/local-db.mjs  -> keeps running; Ctrl+C to stop. Data persists in ./.pg-dev
 import EmbeddedPostgres from 'embedded-postgres';
 import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const port = Number(process.env.PGPORT ?? 5432);
-const dir = new URL('../.pg-dev', import.meta.url).pathname;
+// fileURLToPath, not .pathname: a folder name with spaces must not become %20.
+const dir = fileURLToPath(new URL('../.pg-dev', import.meta.url));
 const fresh = !existsSync(dir);
 const pg = new EmbeddedPostgres({ databaseDir: dir, port, user: 'postgres', password: 'postgres', persistent: true, onLog: () => {} });
 if (fresh) await pg.initialise();
