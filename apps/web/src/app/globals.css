@@ -1,0 +1,147 @@
+@import 'tailwindcss';
+
+/* era. design system — tokens mirror the "era." Design System (tokens.json). Use the semantic names. */
+@theme inline {
+  --color-navy-900: #1b2438;
+  --color-navy-800: #2c3a5a;
+  --color-navy-700: #3d507c;
+  --color-navy-500: #4e669e;
+  --color-mist: #e6e6e6;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-on-brand: var(--on-brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-on-brand-soft: var(--on-brand-soft);
+  --color-accent: var(--accent);
+  --color-focus: var(--focus);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-danger-fill: var(--danger-fill);
+  --color-on-danger: var(--on-danger);
+
+  --font-sans: var(--font-figtree), 'Segoe UI', system-ui, sans-serif;
+  --font-display: var(--font-cormorant), 'Iowan Old Style', Georgia, serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, Menlo, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --shadow-card: 0 1px 2px rgba(27, 36, 56, 0.06);
+  --shadow-pop: 0 12px 32px rgba(27, 36, 56, 0.18);
+}
+
+:root {
+  --canvas: #f6f7fa;
+  --surface: #ffffff;
+  --subtle: #eef0f5;
+  --line: #e6e6e6;
+  --line-strong: #7f889e;
+  --ink: #1b2438;
+  --muted: #55607a;
+  --faint: #8a91a3;
+  --brand: #2c3a5a;
+  --brand-hover: #1b2438;
+  --on-brand: #ffffff;
+  --brand-soft: #e8ecf5;
+  --on-brand-soft: #2c3a5a;
+  --accent: #4e669e;
+  --focus: #4e669e;
+  --success: #1d6b4b;
+  --success-soft: #e3f3ea;
+  --warning: #7d5200;
+  --warning-soft: #fbf0d9;
+  --danger: #a61f30;
+  --danger-soft: #fbe6e9;
+  --info: #2b558f;
+  --info-soft: #e5edf8;
+  --danger-fill: #b42335;
+  --on-danger: #ffffff;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #0f1524;
+    --surface: #161e31;
+    --subtle: #1d2740;
+    --line: #2a3550;
+    --line-strong: #6c7895;
+    --ink: #eef1f7;
+    --muted: #a6afc4;
+    --faint: #7a85a0;
+    --brand: #c7d1ea;
+    --brand-hover: #dde3f2;
+    --on-brand: #1b2438;
+    --brand-soft: #243154;
+    --on-brand-soft: #dde3f2;
+    --accent: #8fa5d8;
+    --focus: #8fa5d8;
+    --success: #7dd8ad;
+    --success-soft: #12352a;
+    --warning: #f0c46a;
+    --warning-soft: #3a2c10;
+    --danger: #f39aa6;
+    --danger-soft: #3d1820;
+    --info: #a3c3ee;
+    --info-soft: #16294a;
+    --danger-fill: #e2697a;
+    --on-danger: #1b2438;
+    color-scheme: dark;
+  }
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.eyebrow {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+@media print {
+  body {
+    background: #fff;
+    color: #000;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Iconography: Lucide outline icons at a 1.75px stroke (design system rule). */
+svg.lucide {
+  stroke-width: 1.75;
+}

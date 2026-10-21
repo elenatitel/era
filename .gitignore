@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-test/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.production.example
+!.env.example
+.DS_Store
+.pg-test/
+.pg-dev/
