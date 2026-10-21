@@ -1,0 +1,37 @@
+# Staging: everything in the cluster, e-mails caught by Mailpit, the whole site behind a password,
+# a demo hotel to test with. Secrets are NOT here: pass them at install time (see README.md).
+host: staging.erahospitality.ai
+
+# CI publishes ghcr.io/<owner>/era-api|web:main on every push to main (and :<commit sha>).
+# GHCR packages are private by default: create a pull secret and list it in image.pullSecrets.
+image:
+  api: { repository: ghcr.io/elenatitel/era-api, tag: main }
+  web: { repository: ghcr.io/elenatitel/era-web, tag: main }
+  pullPolicy: Always
+
+app:
+  logLevel: debug
+  platformAdminEmail: admin@erahospitality.ai
+  mail:
+    from: "era. staging <no-reply@erahospitality.ai>"
+
+postgres:
+  enabled: true
+  storage: 5Gi
+
+mailpit:
+  enabled: true
+  host: mail.staging.erahospitality.ai
+
+seed:
+  enabled: true
+  demo: true
+
+ingress:
+  className: nginx
+  tls:
+    enabled: true
+    clusterIssuer: letsencrypt-prod
+  basicAuth:
+    enabled: true
+    secretName: era-staging-auth

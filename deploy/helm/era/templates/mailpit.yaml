@@ -1,0 +1,56 @@
+{{- if .Values.mailpit.enabled }}
+{{- $name := printf "%s-mailpit" (include "era.fullname" .) -}}
+# Staging only: catches all outgoing e-mail (booking confirmations, guest codes, invitations) in a web inbox.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "era.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mailpit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "era.selector" (list . "mailpit") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "era.selector" (list . "mailpit") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: mailpit
+          image: {{ .Values.mailpit.image }}
+          ports:
+            - { name: smtp, containerPort: 1025 }
+            - { name: ui, containerPort: 8025 }
+          env:
+            - { name: MP_MAX_MESSAGES, value: "2000" }
+          readinessProbe:
+            httpGet: { path: /livez, port: ui }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "era.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mailpit
+spec:
+  selector:
+    {{- include "era.selector" (list . "mailpit") | nindent 4 }}
+  ports:
+    - { name: smtp, port: 1025, targetPort: smtp }
+    - { name: ui, port: 8025, targetPort: ui }
+{{- end }}

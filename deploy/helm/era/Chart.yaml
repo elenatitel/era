@@ -1,0 +1,7 @@
+apiVersion: v2
+name: era
+description: era. hotel property management (API, web app, migrations; optional Postgres and Mailpit for staging)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords: [hotel, pms, hospitality]
