@@ -139,6 +139,15 @@ housekeeping permissions and GDPR erasure.
 
 5. Sign in at `https://DOMAIN`, enable 2FA, open **Platform → New organization**. The hotel owner receives an invitation e-mail.
 
+**Images:** one `Dockerfile` at the repository root builds both services; choose one with `--target`:
+
+```bash
+docker build --target api -t era-api .
+docker build --target web -t era-web .
+```
+
+The `api` image also runs migrations (`node dist/db/migrate.js`), which is what the `migrate` service in `docker-compose.prod.yml` does.
+
 **Online booking with Stripe:** each hotel uses its own Stripe account. In **Settings → Online booking**, set the web address, paste the publishable and secret keys, add the shown webhook endpoint in Stripe (event `payment_intent.succeeded`) and paste its signing secret. Without keys, online bookings are confirmed at once and paid at the hotel.
 
 **Operations checklist:** schedule `pg_dump` backups of the `pgdata` volume off-site and test restores;
@@ -152,6 +161,7 @@ point uptime monitoring at `/api/health`.
 apps/api      NestJS API — src/<module>/, drizzle/ (SQL migrations incl. RLS), test/ (e2e)
 apps/web      Next.js app — src/app/(auth), src/app/(app), src/components, src/lib
 packages/shared  permissions, roles, schemas, helpers used by both
+Dockerfile    builds the api and web images (--target api | web)
 docker/       Caddyfile, Postgres init script
 ```
 

@@ -29,5 +29,5 @@ jobs:
     needs: test
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -f apps/api/Dockerfile -t pms-api .
-      - run: docker build -f apps/web/Dockerfile -t pms-web .
+      - run: docker build --target api -t era-api .
+      - run: docker build --target web -t era-web .

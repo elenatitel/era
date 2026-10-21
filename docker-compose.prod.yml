@@ -20,7 +20,7 @@ services:
     networks: [internal]
 
   migrate:
-    build: { context: ., dockerfile: apps/api/Dockerfile }
+    build: { context: ., target: api }
     command: ['node', 'dist/db/migrate.js']
     environment: &api-env
       NODE_ENV: production
@@ -44,7 +44,7 @@ services:
     networks: [internal]
 
   api:
-    build: { context: ., dockerfile: apps/api/Dockerfile }
+    build: { context: ., target: api }
     restart: unless-stopped
     environment:
       <<: *api-env
@@ -60,7 +60,7 @@ services:
   web:
     build:
       context: .
-      dockerfile: apps/web/Dockerfile
+      target: web
       args:
         NEXT_PUBLIC_APP_NAME: ${APP_NAME:-era.}
     restart: unless-stopped
