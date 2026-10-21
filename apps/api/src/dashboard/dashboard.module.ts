@@ -8,6 +8,7 @@ import { Perms } from '../auth/decorators.js';
 import { DbService } from '../db/db.service.js';
 import { folioItems, housekeepingTasks, payments, reservations, rooms } from '../db/schema.js';
 import { getAccessibleProperty } from '../properties/properties.module.js';
+import { LiveService } from './live.service.js';
 
 const statuses = sql.join(
   ACTIVE_RESERVATION_STATUSES.map((s) => sql`${s}`),
@@ -126,17 +127,42 @@ export class DashboardService {
 }
 
 const q = z.object({ propertyId: z.uuid() });
+const dayQuery = z.object({ propertyId: z.uuid(), date: z.iso.date().optional() });
 
 @Controller('dashboard')
 export class DashboardController {
-  constructor(private readonly svc: DashboardService) {}
+  constructor(
+    private readonly svc: DashboardService,
+    private readonly live: LiveService,
+  ) {}
 
   @Get()
   @Perms('property.read')
   overview(@ZQuery(q) query: { propertyId: string }) {
     return this.svc.overview(query.propertyId);
   }
+
+  /** Rooms by floor with who is in them and who is coming, for the house home screen. */
+  @Get('house')
+  @Perms('property.read')
+  house(@ZQuery(q) query: { propertyId: string }) {
+    return this.live.house(query.propertyId);
+  }
+
+  /** Everything that happens on one day, placed on a timeline. */
+  @Get('day')
+  @Perms('property.read')
+  day(@ZQuery(dayQuery) query: { propertyId: string; date?: string }) {
+    return this.live.day(query.propertyId, query.date);
+  }
+
+  /** The night shift: what stands between the desk and the night audit. */
+  @Get('night')
+  @Perms('property.read')
+  night(@ZQuery(q) query: { propertyId: string }) {
+    return this.live.night(query.propertyId);
+  }
 }
 
-@Module({ controllers: [DashboardController], providers: [DashboardService] })
+@Module({ controllers: [DashboardController], providers: [DashboardService, LiveService] })
 export class DashboardModule {}

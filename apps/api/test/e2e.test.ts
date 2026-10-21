@@ -763,3 +763,60 @@ describe('guest journey: booking engine, payment and online check-in', () => {
     assert.equal(r.status, 'cancelled');
   });
 });
+
+describe('live views: house, day and night shift', () => {
+  let owner: Client;
+  let propertyId: string;
+  before(async () => {
+    owner = await login('owner@demo.test');
+    propertyId = (await owner.get('/properties')).body[0].id;
+  });
+
+  test('arrival estimates become a time on the timeline', async () => {
+    const { arrivalTime } = await import('../src/dashboard/live.service.js');
+    assert.equal(arrivalTime('16:00 – 17:00', '14:00'), '16:00');
+    assert.equal(arrivalTime('After 22:00', '14:00'), '22:00');
+    assert.equal(arrivalTime('around 9.30', '14:00'), '09:30');
+    assert.equal(arrivalTime(null, '14:00'), '14:00');
+  });
+
+  test('the house shows every room on a floor, with a state the desk can act on', async () => {
+    const res = await owner.get(`/dashboard/house?propertyId=${propertyId}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const rooms = (await owner.get(`/rooms?propertyId=${propertyId}`)).body.filter((r: any) => r.active);
+    assert.equal(res.body.rooms.length, rooms.length);
+    assert.ok(res.body.rooms.every((r: any) => ['in_house', 'ready', 'dirty', 'free', 'out'].includes(r.state) && r.floor));
+    assert.equal(res.body.counts.occupied, res.body.rooms.filter((r: any) => r.state === 'in_house').length);
+    // Every in-house room names its guest for front desk staff.
+    assert.ok(res.body.rooms.filter((r: any) => r.stay).every((r: any) => typeof r.stay.guestName === 'string'));
+    for (const s of res.body.suggestions) assert.ok(rooms.some((r: any) => r.id === s.roomId));
+  });
+
+  test('without reservations.read the house hides who is staying', async () => {
+    const hk = await login('housekeeper@demo.test');
+    const res = await hk.get(`/dashboard/house?propertyId=${propertyId}`);
+    if (res.status === 403) return; // roles without property.read never see the house
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.arrivals, []);
+    assert.ok(res.body.rooms.every((r: any) => !r.stay || r.stay.guestName === null));
+  });
+
+  test('the day timeline is sorted and always ends with the night audit', async () => {
+    const res = await owner.get(`/dashboard/day?propertyId=${propertyId}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const times = res.body.items.map((i: any) => i.time);
+    assert.deepEqual(times, [...times].sort());
+    assert.ok(res.body.items.some((i: any) => i.lane === 'money' && i.title === 'night_audit'));
+    assert.ok(res.body.items.every((i: any) => /^\d{2}:\d{2}$/.test(i.time)));
+    assert.equal((await owner.get(`/dashboard/day?propertyId=${propertyId}&date=yesterday`)).status, 422);
+  });
+
+  test('the night shift lists the checks before the audit and who owes money', async () => {
+    const res = await owner.get(`/dashboard/night?propertyId=${propertyId}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.checks.map((c: any) => c.key), ['departures', 'arrivals', 'housekeeping', 'balances']);
+    assert.equal(res.body.ready, res.body.checks.every((c: any) => c.done));
+    assert.ok(res.body.owes.every((o: any) => o.balance > 0));
+    assert.ok(res.body.tonight.occupied <= res.body.tonight.sellable);
+  });
+});

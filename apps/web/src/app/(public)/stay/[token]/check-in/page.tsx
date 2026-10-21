@@ -241,7 +241,7 @@ export default function CheckInPage() {
           </Link>
         }
       />
-      <div className="bg-navy-800 px-4 pb-3 text-xs text-[#c7d1ea]">
+      <div className="bg-navy-900 px-4 pb-3 text-xs text-[#c7d1ea]">
         <div className="mx-auto max-w-xl">
           {data.hotel.name} · {stayDate(b.arrival, locale, false)} – {stayDate(b.departure, locale, false)} · {b.code}
         </div>

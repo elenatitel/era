@@ -1,17 +1,20 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { useState } from 'react';
 import { weekday } from '@pms/shared';
+import { HouseHome } from '@/components/house';
+import { NightHome } from '@/components/night-home';
 import { PropertyGate } from '@/components/property-gate';
-import { CheckInDialog, CheckOutDialog } from '@/components/stay-dialogs';
-import { Alert, Badge, Button, ButtonLink, Card, ErrorText, Spinner, Stat, statusTone } from '@/components/ui';
+import { CheckOutDialog } from '@/components/stay-dialogs';
+import { Badge, Button, Card, ErrorText, Spinner, statusTone } from '@/components/ui';
 import { api } from '@/lib/api';
 import { date, money } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
+import { useTheme } from '@/lib/theme';
 import type { Property } from '@/lib/types';
 
 interface Overview {
@@ -51,21 +54,11 @@ interface FrontDesk {
   departures: StayRow[];
 }
 
-const ROOM_ORDER = ['clean', 'inspected', 'dirty', 'out_of_order'] as const;
-const SEGMENT_FILL: Record<string, string> = { clean: 'bg-success', inspected: 'bg-info', dirty: 'bg-warning', out_of_order: 'bg-danger' };
 const METHOD_FILL = ['bg-brand', 'bg-accent', 'bg-line-strong', 'bg-subtle', 'bg-muted'];
 
-function greetingKey() {
-  const h = new Date().getHours();
-  return h < 12 ? 'dashboard.greetingMorning' : h < 18 ? 'dashboard.greetingAfternoon' : 'dashboard.greetingEvening';
-}
-
-function Dashboard({ property }: { property: Property }) {
+function Insights({ property }: { property: Property }) {
   const { t, locale } = useI18n();
-  const { can, me } = useSession();
-  const qc = useQueryClient();
-  const [notice, setNotice] = useState<string | null>(null);
-  const [checkIn, setCheckIn] = useState<StayRow | null>(null);
+  const { can } = useSession();
   const [checkOut, setCheckOut] = useState<StayRow | null>(null);
   const q = useQuery({ queryKey: ['dashboard', property.id], queryFn: () => api.get<Overview>('/dashboard', { propertyId: property.id }), refetchInterval: 60_000 });
   const desk = useQuery({
@@ -74,81 +67,21 @@ function Dashboard({ property }: { property: Property }) {
     enabled: can('reservations.read'),
     refetchInterval: 60_000,
   });
-  const audit = useMutation({
-    mutationFn: () => api.post<{ newBusinessDate: string }>(`/properties/${property.id}/night-audit`),
-    onSuccess: (r) => {
-      setNotice(t('dashboard.nightAuditDone', { date: date(r.newBusinessDate, locale) }));
-      void qc.invalidateQueries();
-    },
-  });
 
   if (q.isLoading) return <Spinner />;
   if (q.error) return <ErrorText error={q.error} />;
   const d = q.data!;
   const m = (v: number) => money(v, d.currency, locale);
   const loc = locale === 'en' ? 'en-GB' : 'ro-RO';
-  const weekdayLong = new Intl.DateTimeFormat(loc, { weekday: 'long', timeZone: 'UTC' });
   const weekdayShort = new Intl.DateTimeFormat(loc, { weekday: 'short', timeZone: 'UTC' });
   const asDate = (iso: string) => new Date(`${iso}T00:00:00Z`);
-  const firstName = me.user.name.split(' ')[0] ?? me.user.name;
   const peak = d.forecast.reduce((a, b) => (b.percent > a.percent ? b : a), d.forecast[0] ?? { date: d.businessDate, percent: 0, booked: 0 });
-  const roomsTotal = ROOM_ORDER.reduce((s, k) => s + (d.rooms.byStatus[k] ?? 0), 0);
-  const hkPct = d.housekeeping.total ? Math.round((d.housekeeping.done / d.housekeeping.total) * 100) : 0;
-  const arrivals = desk.data?.arrivals ?? [];
   const departures = desk.data?.departures ?? [];
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <span className="eyebrow">
-            {weekdayLong.format(asDate(d.businessDate))} · {t('dashboard.businessDate').toLowerCase()} {date(d.businessDate, locale)}
-          </span>
-          <h1 className="text-[28px] leading-9 font-semibold tracking-tight">{t(greetingKey(), { name: firstName })}</h1>
-          <p className="text-sm text-muted">
-            {t('dashboard.summary', { property: property.name, arrivals: d.arrivals.expected, departures: d.departures.expected, inHouse: d.occupancy.inHouse })}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {can('property.manage') && (
-            <Button
-              variant="secondary"
-              loading={audit.isPending}
-              onClick={() => confirm(t('dashboard.nightAuditConfirm', { date: date(d.businessDate, locale) })) && audit.mutate()}
-            >
-              {t('dashboard.nightAudit')}
-            </Button>
-          )}
-          {can('reservations.create') && <ButtonLink href="/reservations/new">{t('reservations.new')}</ButtonLink>}
-        </div>
-      </div>
-
-      {notice && <Alert tone="green">{notice}</Alert>}
-      <ErrorText error={audit.error} />
-      {d.attention.roomsNotReady.length > 0 && (
-        <Alert tone="amber">{t('dashboard.notReady', { rooms: d.attention.roomsNotReady.map((r) => r.number).join(', ') })}</Alert>
-      )}
-
-      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(160px,1fr))]">
-        <Stat label={t('dashboard.occupancy')} value={`${d.occupancy.percent}%`} hint={t('dashboard.roomsOf', { n: d.occupancy.inHouse, total: d.rooms.sellable })} />
-        <Stat
-          label={t('dashboard.arrivals')}
-          value={`${d.arrivals.arrived} / ${d.arrivals.expected}`}
-          hint={t('dashboard.waitingCheckIn', { n: Math.max(0, d.arrivals.expected - d.arrivals.arrived) })}
-        />
-        <Stat
-          label={t('dashboard.departures')}
-          value={`${d.departures.departed} / ${d.departures.expected}`}
-          hint={t('dashboard.stillToLeave', { n: Math.max(0, d.departures.expected - d.departures.departed) })}
-        />
-        {d.financial ? (
-          <Stat label={t('dashboard.revenueToday')} value={m(d.financial.revenueToday)} hint={`${t('dashboard.revenueMonth')}: ${m(d.financial.revenueMonth)}`} />
-        ) : (
-          <Stat label={t('dashboard.inHouse')} value={d.occupancy.inHouse} />
-        )}
-      </div>
-
-      <div className="flex flex-wrap gap-6">
+    <div className="flex flex-col gap-5">
+      <h2 className="sr-only">{t('house.insights')}</h2>
+      <div className="flex flex-wrap gap-5">
         <Card
           className="min-w-0 flex-[2_1_560px]"
           title={t('dashboard.forecastTitle')}
@@ -185,90 +118,10 @@ function Dashboard({ property }: { property: Property }) {
           </div>
         </Card>
 
-        <Card
-          className="min-w-0 flex-[1_1_300px]"
-          title={t('dashboard.roomStatus')}
-          actions={
-            can('housekeeping.read') && (
-              <Link href="/housekeeping" className="text-xs text-accent hover:underline">
-                {t('dashboard.openHousekeeping')}
-              </Link>
-            )
-          }
-        >
-          <div className="flex flex-col gap-5">
-            <div aria-hidden className="flex h-3 gap-0.5 overflow-hidden rounded-full bg-subtle">
-              {ROOM_ORDER.filter((k) => (d.rooms.byStatus[k] ?? 0) > 0).map((k) => (
-                <span key={k} className={SEGMENT_FILL[k]} style={{ flex: `${d.rooms.byStatus[k]} 1 0` }} />
-              ))}
-            </div>
-            <ul className="flex flex-col gap-2.5">
-              {ROOM_ORDER.map((k) => (
-                <li key={k} className="flex items-center justify-between">
-                  <Badge tone={statusTone[k]} dot>
-                    {t(`roomStatus.${k}`)}
-                  </Badge>
-                  <span className="font-semibold tabular-nums">
-                    {d.rooms.byStatus[k] ?? 0}
-                    <span className="ml-1 text-xs font-normal text-muted">/ {roomsTotal}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <div className="flex flex-col gap-2 border-t border-line pt-4">
-              <div className="flex justify-between text-sm">
-                <span>{t('dashboard.hkTasks')}</span>
-                <strong className="tabular-nums">
-                  {d.housekeeping.done} / {d.housekeeping.total}
-                </strong>
-              </div>
-              <div aria-hidden className="h-2 overflow-hidden rounded-full bg-subtle">
-                <div className="h-full rounded-full bg-brand" style={{ width: `${hkPct}%` }} />
-              </div>
-              <span className="text-xs text-muted">{t('dashboard.hkDetail', { inProgress: d.housekeeping.inProgress, unassigned: d.housekeeping.unassigned })}</span>
-            </div>
-          </div>
-        </Card>
       </div>
 
       {can('reservations.read') && (
         <div className="flex flex-wrap gap-6">
-          <Card
-            className="min-w-0 flex-[1_1_480px]"
-            padded={false}
-            title={t('dashboard.arrivalsToday', { n: arrivals.length })}
-            actions={
-              <Link href="/front-desk" className="text-xs text-accent hover:underline">
-                {t('dashboard.openFrontDesk')}
-              </Link>
-            }
-          >
-            <StayTable
-              rows={arrivals}
-              head={[t('reservations.guest'), t('reservations.roomType'), t('reservations.room'), '']}
-              cells={(r) => [
-                <span key="t">{r.roomTypeCode}</span>,
-                <span key="r" className="flex items-center gap-2">
-                  <span className="font-semibold">{r.roomNumber ?? '—'}</span>
-                  {r.roomNumber &&
-                    (r.status === 'checked_in' ? (
-                      <Badge tone="gray">{t('dashboard.occupiedRoom')}</Badge>
-                    ) : (
-                      r.roomStatus && <Badge tone={statusTone[r.roomStatus]}>{t(`roomStatus.${r.roomStatus}`)}</Badge>
-                    ))}
-                </span>,
-                r.status === 'checked_in' ? (
-                  <Badge key="a" tone="green" dot>
-                    {t('dashboard.checkedIn')}
-                  </Badge>
-                ) : can('frontdesk.checkin') ? (
-                  <Button key="a" size="sm" onClick={() => setCheckIn(r)}>
-                    {t('frontDesk.checkIn')}
-                  </Button>
-                ) : null,
-              ]}
-            />
-          </Card>
           <Card
             className="min-w-0 flex-[1_1_400px]"
             padded={false}
@@ -353,7 +206,6 @@ function Dashboard({ property }: { property: Property }) {
         </Card>
       )}
 
-      {checkIn && <CheckInDialog reservationId={checkIn.id} title={`${t('frontDesk.checkIn')} · ${checkIn.guestName}`} onClose={() => setCheckIn(null)} />}
       {checkOut && <CheckOutDialog reservationId={checkOut.id} title={`${t('frontDesk.checkOut')} · ${checkOut.guestName}`} onClose={() => setCheckOut(null)} />}
     </div>
   );
@@ -422,6 +274,17 @@ function StayTable({ rows, head, cells }: { rows: StayRow[]; head: string[]; cel
   );
 }
 
+function Home({ property }: { property: Property }) {
+  const { night } = useTheme();
+  if (night) return <NightHome property={property} />;
+  return (
+    <div className="flex flex-col gap-5">
+      <HouseHome property={property} />
+      <Insights property={property} />
+    </div>
+  );
+}
+
 export default function DashboardPage() {
-  return <PropertyGate perms={['property.read']}>{(p) => <Dashboard property={p} />}</PropertyGate>;
+  return <PropertyGate perms={['property.read']}>{(p) => <Home property={p} />}</PropertyGate>;
 }

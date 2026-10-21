@@ -91,7 +91,7 @@ const HOLD_MINUTES = 30;
 const appearance = {
   theme: 'stripe' as const,
   variables: {
-    colorPrimary: '#2c3a5a',
+    colorPrimary: '#1b2438',
     colorText: '#1b2438',
     colorTextSecondary: '#55607a',
     colorDanger: '#a61f30',

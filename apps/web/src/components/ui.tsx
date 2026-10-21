@@ -33,10 +33,10 @@ export function Button({
       {...props}
       disabled={disabled || loading}
       className={clsx(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50',
-        size === 'sm' ? 'px-2.5 py-1.5 text-xs' : 'px-4 py-2 text-sm',
-        variant === 'primary' && 'bg-brand text-on-brand shadow-sm hover:bg-brand-hover',
-        variant === 'secondary' && 'border border-line-strong bg-surface text-ink hover:bg-subtle',
+        'inline-flex items-center justify-center gap-2 rounded-full font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50',
+        size === 'sm' ? 'min-h-8 px-3.5 py-1 text-xs' : 'min-h-11 px-5 py-2 text-sm',
+        variant === 'primary' && 'bg-brand text-on-brand hover:bg-brand-hover',
+        variant === 'secondary' && 'border border-line bg-surface text-ink hover:border-line-strong hover:bg-subtle',
         variant === 'ghost' && 'text-muted hover:bg-subtle hover:text-ink',
         variant === 'danger' && 'bg-danger-fill text-on-danger hover:opacity-90',
         className,
@@ -53,9 +53,9 @@ export function ButtonLink({ href, children, variant = 'primary', className }: {
     <Link
       href={href}
       className={clsx(
-        'inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition',
-        variant === 'primary' && 'bg-brand text-on-brand shadow-sm hover:bg-brand-hover',
-        variant === 'secondary' && 'border border-line-strong bg-surface text-ink hover:bg-subtle',
+        'inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 py-2 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+        variant === 'primary' && 'bg-brand text-on-brand hover:bg-brand-hover',
+        variant === 'secondary' && 'border border-line bg-surface text-ink hover:border-line-strong hover:bg-subtle',
         variant === 'ghost' && 'text-muted hover:bg-subtle hover:text-ink',
         className,
       )}
@@ -66,7 +66,7 @@ export function ButtonLink({ href, children, variant = 'primary', className }: {
 }
 
 const fieldBase =
-  'w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink placeholder:text-faint focus:border-focus focus:outline-none focus:ring-2 focus:ring-focus/25 disabled:bg-subtle';
+  'w-full rounded-xl border border-line-strong bg-surface px-3.5 py-2.5 text-sm text-ink placeholder:text-faint focus:border-focus focus:outline-none focus:ring-2 focus:ring-focus/25 disabled:bg-subtle';
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...props }, ref) {
   return <input ref={ref} {...props} className={clsx(fieldBase, className)} />;
@@ -114,14 +114,14 @@ export function Checkbox({ label, checked, onChange, disabled }: { label: ReactN
 
 export function Card({ title, actions, children, className, padded = true }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; padded?: boolean }) {
   return (
-    <section className={clsx('rounded-2xl border border-line bg-surface shadow-card', className)}>
+    <section className={clsx('rounded-[28px] bg-surface', className)}>
       {(title || actions) && (
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3.5">
-          {title && <h2 className="text-sm font-semibold text-ink">{title}</h2>}
+        <header className="flex flex-wrap items-center justify-between gap-2 px-6 pt-5 pb-2">
+          {title && <h2 className="text-lg leading-6 font-semibold text-ink">{title}</h2>}
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
-      <div className={padded ? 'p-5' : ''}>{children}</div>
+      <div className={padded ? 'px-6 pt-3 pb-6' : 'pb-2'}>{children}</div>
     </section>
   );
 }
@@ -131,7 +131,7 @@ export function PageHeader({ title, eyebrow, subtitle, actions }: { title: strin
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div className="flex min-w-0 flex-col gap-1">
         {eyebrow && <span className="eyebrow">{eyebrow}</span>}
-        <h1 className="text-2xl leading-8 font-semibold tracking-tight text-ink">{title}</h1>
+        <h1 className="text-[34px] leading-10 font-semibold tracking-[-0.02em] text-ink">{title}</h1>
         {subtitle && <div className="text-sm text-muted">{subtitle}</div>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -222,19 +222,19 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
       onClose={onClose}
       onCancel={onClose}
       className={clsx(
-        'm-auto w-[calc(100%-2rem)] rounded-2xl border border-line bg-surface p-0 text-ink shadow-2xl backdrop:bg-black/40 backdrop:backdrop-blur-[2px]',
+        'm-auto w-[calc(100%-2rem)] rounded-[28px] bg-surface p-0 text-ink shadow-pop backdrop:bg-black/40 backdrop:backdrop-blur-[2px]',
         wide ? 'max-w-3xl' : 'max-w-lg',
       )}
     >
       {open && (
         <div>
-          <header className="flex items-center justify-between border-b border-line px-5 py-3.5">
-            <h2 className="text-base font-semibold">{title}</h2>
-            <button onClick={onClose} className="rounded-md p-1 text-muted hover:bg-subtle" aria-label="Close">
+          <header className="flex items-center justify-between px-6 pt-5 pb-2">
+            <h2 className="text-lg font-semibold">{title}</h2>
+            <button onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full text-muted hover:bg-subtle" aria-label="Close">
               <X size={18} />
             </button>
           </header>
-          <div className="max-h-[75vh] overflow-y-auto p-5">{children}</div>
+          <div className="max-h-[75vh] overflow-y-auto px-6 pt-3 pb-6">{children}</div>
         </div>
       )}
     </dialog>
@@ -246,7 +246,7 @@ export function Alert({ tone = 'red', children }: { tone?: 'red' | 'green' | 'am
     <div
       role="alert"
       className={clsx(
-        'rounded-lg px-3 py-2.5 text-sm',
+        'rounded-2xl px-4 py-3 text-sm',
         tone === 'red' && 'bg-danger-soft text-danger',
         tone === 'green' && 'bg-success-soft text-success',
         tone === 'amber' && 'bg-warning-soft text-warning',
@@ -288,22 +288,25 @@ export function Spinner() {
   );
 }
 
-export function Stat({ label, value, hint, icon }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode }) {
+/** Sunlit KPI tile: a big number; `highlight` paints the one tile that matters most in sun. */
+export function Stat({ label, value, hint, icon, highlight }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode; highlight?: boolean }) {
   return (
-    <div className="rounded-2xl border border-line bg-surface p-5">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted">{label}</p>
-        {icon && <div className="rounded-xl border border-line bg-subtle p-2 text-accent">{icon}</div>}
+    <div className={clsx('flex min-h-31 flex-col justify-between gap-4 rounded-[22px] px-[18px] py-4', highlight ? 'bg-sun text-on-sun' : 'bg-surface text-ink')}>
+      <div className="flex items-center justify-between gap-2">
+        <p className={clsx('text-[13px]', highlight ? 'text-on-sun' : 'text-muted')}>{label}</p>
+        {icon && <div className={clsx('rounded-full p-2', highlight ? 'bg-on-sun/10' : 'bg-subtle text-accent')}>{icon}</div>}
       </div>
-      <p className="mt-2 text-2xl font-semibold tracking-tight text-ink tabular-nums">{value}</p>
-      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
+      <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-1">
+        <p className="text-[40px] leading-[42px] font-medium tracking-[-0.03em] tabular-nums">{value}</p>
+        {hint && <p className={clsx('pb-1 text-xs', highlight ? 'text-on-sun' : 'text-muted')}>{hint}</p>}
+      </div>
     </div>
   );
 }
 
 export function Tabs<T extends string>({ value, onChange, items }: { value: T; onChange: (v: T) => void; items: { value: T; label: ReactNode }[] }) {
   return (
-    <div className="mb-4 flex gap-1 overflow-x-auto border-b border-line" role="tablist">
+    <div className="mb-4 flex w-fit max-w-full gap-1 overflow-x-auto rounded-full bg-surface p-1" role="tablist">
       {items.map((i) => (
         <button
           key={i.value}
@@ -311,8 +314,8 @@ export function Tabs<T extends string>({ value, onChange, items }: { value: T; o
           aria-selected={value === i.value}
           onClick={() => onChange(i.value)}
           className={clsx(
-            '-mb-px border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap',
-            value === i.value ? 'border-brand text-ink' : 'border-transparent text-muted hover:text-ink',
+            'min-h-10 rounded-full px-4 text-sm font-medium whitespace-nowrap',
+            value === i.value ? 'bg-brand font-semibold text-on-brand' : 'text-muted hover:text-ink',
           )}
         >
           {i.label}

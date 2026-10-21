@@ -75,7 +75,7 @@ function Stay() {
       {isNew && !b.awaitingPayment ? (
         <HotelHeader name={hotel.name} compact />
       ) : (
-        <div className="bg-navy-800 text-white">
+        <div className="bg-navy-900 text-white">
           <HotelHeader name={hotel.name} place={place} />
           <div className="mx-auto -mt-3 max-w-xl px-4 pb-7">
             <h1 className="font-display text-[34px] leading-[38px] font-medium">{t('guest.hello', { name: guest.firstName })}</h1>

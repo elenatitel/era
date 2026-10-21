@@ -10,10 +10,10 @@ export function Wordmark({ size = 'md', tagline, inverse }: { size?: 'sm' | 'md'
   return (
     <span className="inline-flex flex-col gap-0.5">
       <span className="inline-flex items-baseline gap-0.5" aria-label="era.">
-        <span aria-hidden className={clsx('font-display font-medium italic', text, inverse ? 'text-white' : 'text-ink')}>
+        <span aria-hidden className={clsx('font-display font-normal italic', text, inverse ? 'text-white' : 'text-ink')}>
           era
         </span>
-        <span aria-hidden className={clsx('inline-block rounded-full', dot, inverse ? 'bg-[#8fa5d8]' : 'bg-accent')} />
+        <span aria-hidden className={clsx('inline-block rounded-full', dot, inverse ? 'bg-sun' : 'bg-ink')} />
       </span>
       {tagline && (
         <span className={clsx('text-[10px] leading-[14px] tracking-[0.14em] uppercase', inverse ? 'text-white/75' : 'text-muted')}>

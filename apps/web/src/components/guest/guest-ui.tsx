@@ -9,12 +9,12 @@ import { useI18n } from '@/lib/i18n';
 export function HotelHeader({ name, place, compact, back }: { name: string; place?: string | null; compact?: boolean; back?: ReactNode }) {
   const { locale, setLocale } = useI18n();
   return (
-    <header className="bg-navy-800 text-white">
+    <header className="bg-navy-900 text-white">
       <div className={clsx('mx-auto flex max-w-5xl items-center gap-3 px-4', compact ? 'py-3' : 'pt-7 pb-6')}>
         {back}
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           {!compact && place && <span className="text-[11px] leading-4 tracking-[0.14em] text-[#c7d1ea] uppercase">{place}</span>}
-          <span className={clsx('font-display font-medium', compact ? 'text-[26px] leading-[30px]' : 'text-4xl leading-10')}>{name}</span>
+          <span className={clsx('font-display font-normal', compact ? 'text-[26px] leading-[30px]' : 'text-4xl leading-10')}>{name}</span>
         </div>
         <button
           type="button"

@@ -9,7 +9,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
   const { t, locale, setLocale } = useI18n();
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
-      <aside className="relative hidden overflow-hidden bg-navy-800 p-12 text-white lg:flex lg:flex-col lg:justify-between">
+      <aside className="relative hidden overflow-hidden bg-navy-900 p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <Wordmark size="md" tagline inverse />
         <div className="space-y-6">
           <h2 className="max-w-md font-display text-5xl leading-[1.05] font-medium">{t('app.tagline')}</h2>
@@ -31,7 +31,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         </div>
         <p className="text-sm text-white/65">© {new Date().getFullYear()} era.</p>
         <div aria-hidden className="pointer-events-none absolute -right-28 -bottom-28 h-96 w-96 rounded-full bg-navy-700/60" />
-        <div aria-hidden className="pointer-events-none absolute right-24 bottom-40 h-6 w-6 rounded-full bg-[#8fa5d8]" />
+        <div aria-hidden className="pointer-events-none absolute right-24 bottom-40 h-6 w-6 rounded-full bg-sun" />
       </aside>
       <main className="flex flex-col items-center justify-center px-4 py-10">
         <div className="mb-6 flex w-full max-w-sm justify-end gap-1 text-xs">
