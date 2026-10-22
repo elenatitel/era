@@ -1,0 +1,57 @@
+# The API image is locked by digest. CI publishes a copy of this chart with the digest of each build;
+# the zero digest below is only a placeholder for linting the source chart.
+image:
+  repository: harbor.cloud.retreat480.com/era/api
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  pullPolicy: IfNotPresent
+
+# Keep 1: the login rate limiter is in memory. Migrations run in the init container (Recreate strategy).
+replicas: 1
+
+# Secret created in the namespace, never in Git. Keys:
+#   JWT_SECRET (openssl rand -hex 32), ENCRYPTION_KEY (openssl rand -base64 32, keep a copy: unrecoverable),
+#   DATABASE_URL (postgres://pms_app:<APP_DB_PASSWORD>@era-db:5432/pms),
+#   DATABASE_MIGRATION_URL (postgres://<POSTGRES_USER>:<POSTGRES_PASSWORD>@era-db:5432/pms),
+#   optional: SMTP_PASSWORD, PLATFORM_ADMIN_PASSWORD, DEMO_PASSWORD
+existingSecret: era-api-credentials
+
+# Used only to wait for PostgreSQL before migrating.
+database:
+  host: era-db
+  port: 5432
+  ssl: false
+
+app:
+  name: era.
+  webOrigin: https://era-staging.cloud.retreat480.com
+  # Proxies in front of the API that add X-Forwarded-For (Traefik = 1).
+  trustProxy: 1
+  logLevel: debug
+  bookingHoldMinutes: 30
+  mailFrom: "era. staging <no-reply@era-staging.cloud.retreat480.com>"
+  platformAdminEmail: ""
+  # Real SMTP (ignored while mailpit.enabled).
+  smtp:
+    host: ""
+    port: 587
+    user: ""
+    secure: false
+
+# Test inbox: every e-mail the API sends lands here (published by the era-web chart's route).
+mailpit:
+  enabled: true
+  image:
+    repository: docker.io/axllent/mailpit
+    digest: sha256:fb84cfb1c3a33007cfdee8ba5a77b8c6c894de5b1a368372ddc5c965cf5c0b6d
+
+# Post-sync job: ensures the platform admin and, with demo, the demo hotel (idempotent).
+seed:
+  enabled: true
+  demo: true
+
+resources:
+  requests: {cpu: 100m, memory: 192Mi}
+  limits: {cpu: "1", memory: 512Mi}
+nodeSelector: {}
+imagePullSecrets:
+  - name: harbor-era-pull

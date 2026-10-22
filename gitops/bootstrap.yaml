@@ -1,0 +1,54 @@
+# Applied once by a cluster admin: kubectl apply -f gitops/bootstrap.yaml
+# Creates the restricted era-staging project and the root Application that watches gitops/staging.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: era-staging
+  namespace: argocd
+spec:
+  description: era. staging charts from Harbor
+  sourceRepos:
+    - harbor.cloud.retreat480.com/era
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: era-staging
+  clusterResourceWhitelist:
+    - group: ""
+      kind: PersistentVolume
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: PersistentVolumeClaim
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: StatefulSet
+    - group: batch
+      kind: Job
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+    - group: traefik.io
+      kind: Middleware
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: era-staging-root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    # Private repository: Argo CD needs a read-only credential for it (see docs/ci.md).
+    repoURL: https://github.com/elenatitel/era.git
+    targetRevision: main
+    path: gitops/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true

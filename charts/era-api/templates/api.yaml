@@ -1,0 +1,91 @@
+{{- $name := .Release.Name -}}
+{{- $secret := .Values.existingSecret -}}
+{{- $image := printf "%s@%s" .Values.image.repository (required "image.digest is required" .Values.image.digest) -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+spec:
+  selector: {app.kubernetes.io/instance: {{ $name }}, app.kubernetes.io/component: api}
+  ports: [{name: http, port: 4000, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+spec:
+  replicas: {{ .Values.replicas }}
+  # Migrations run in the init container: never two pods migrating at once.
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ $name }}, app.kubernetes.io/component: api}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ $name }}, app.kubernetes.io/component: api}
+      annotations:
+        checksum/values: {{ .Values | toJson | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets: {{ .Values.imagePullSecrets | toJson }}
+      nodeSelector: {{ .Values.nodeSelector | toJson }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        # Waits for PostgreSQL, applies migrations with the owner role, then grants the app role its privileges.
+        - name: migrate
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["sh", "-c"]
+          args:
+            - >-
+              node -e "const net=require('net');const t=Date.now();(function f(){const s=net.connect({{ .Values.database.port }},'{{ .Values.database.host }}');s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>{if(Date.now()-t>300000){console.error('database not reachable');process.exit(1)}setTimeout(f,2000)})})()"
+              && node dist/db/migrate.js
+          env:
+            - {name: DATABASE_SSL, value: {{ .Values.database.ssl | quote }}}
+            - name: DATABASE_MIGRATION_URL
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: DATABASE_MIGRATION_URL}}
+            - name: DATABASE_URL
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: DATABASE_URL}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      containers:
+        - name: api
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{name: http, containerPort: 4000}]
+          envFrom:
+            - configMapRef: {name: {{ $name }}-config}
+          env:
+            # The running API only ever gets the least-privileged database role.
+            - name: DATABASE_URL
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: DATABASE_URL}}
+            - name: JWT_SECRET
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: JWT_SECRET}}
+            - name: ENCRYPTION_KEY
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: ENCRYPTION_KEY}}
+            - name: SMTP_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: SMTP_PASSWORD, optional: true}}
+          startupProbe:
+            httpGet: {path: /api/health, port: http}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /api/health, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /api/health, port: http}
+            periodSeconds: 20
+          resources: {{ .Values.resources | toJson }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes:
+        - {name: tmp, emptyDir: {}}

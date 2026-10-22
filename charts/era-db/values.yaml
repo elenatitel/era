@@ -1,0 +1,28 @@
+# PostgreSQL for era. staging. The image is pinned by digest; upgrading it is a deliberate Git change.
+image:
+  repository: docker.io/library/postgres
+  digest: sha256:1bcc18d81671b02906296aad470ec9778a6b71016ce953092024b680bad007b0
+  pullPolicy: IfNotPresent
+
+# Secret created in the namespace, never in Git. Keys:
+#   POSTGRES_DB, POSTGRES_USER (owner role, runs migrations), POSTGRES_PASSWORD,
+#   APP_DB_PASSWORD (password of the least-privileged application role below)
+existingSecret: era-db-credentials
+# Application role created on first start (no superuser, no BYPASSRLS); the API connects with it.
+appUser: pms_app
+
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {cpu: "1", memory: 1Gi}
+
+persistence:
+  size: 5Gi
+  storageClass: era-local
+  # Retained local PersistentVolume on one node. Create the folder on that node first:
+  #   sudo mkdir -p /var/lib/era-staging/postgres && sudo chown 70:70 /var/lib/era-staging/postgres && sudo chmod 700 /var/lib/era-staging/postgres
+  local:
+    enabled: true
+    node: k8s-cs-worker02
+    path: /var/lib/era-staging/postgres
+
+nodeSelector: {}

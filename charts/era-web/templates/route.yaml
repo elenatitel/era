@@ -1,0 +1,62 @@
+{{- $auth := .Values.auth -}}
+{{- $filter := dict "enabled" $auth.enabled "name" (printf "%s-auth" .Release.Name) -}}
+{{- if $auth.enabled }}
+# Traefik basic auth for the whole staging site (and the Mailpit inbox).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ .Release.Name }}-auth
+spec:
+  basicAuth:
+    secret: {{ required "auth.existingSecret is required" $auth.existingSecret }}
+    realm: era. staging
+    # The app does not use the Authorization header; do not pass the staging password on.
+    removeHeader: true
+---
+{{- end }}
+{{- if .Values.route.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  parentRefs:
+    - name: {{ .Values.route.gatewayName }}
+      namespace: {{ .Values.route.gatewayNamespace }}
+      {{- with .Values.route.sectionName }}
+      sectionName: {{ . }}
+      {{- end }}
+  hostnames: [{{ .Values.route.hostname | quote }}]
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /api}
+      {{- include "era-web.authFilter" $filter }}
+      backendRefs:
+        - {name: {{ .Values.apiService }}, port: {{ .Values.apiPort }}}
+    - matches:
+        - path: {type: PathPrefix, value: /}
+      {{- include "era-web.authFilter" $filter }}
+      backendRefs:
+        - {name: {{ .Release.Name }}, port: 3000}
+{{- end }}
+{{- if and .Values.route.enabled .Values.mail.enabled }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-mail
+spec:
+  parentRefs:
+    - name: {{ .Values.route.gatewayName }}
+      namespace: {{ .Values.route.gatewayNamespace }}
+      {{- with .Values.route.sectionName }}
+      sectionName: {{ . }}
+      {{- end }}
+  hostnames: [{{ .Values.mail.hostname | quote }}]
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /}
+      {{- include "era-web.authFilter" $filter }}
+      backendRefs:
+        - {name: {{ .Values.mail.service }}, port: {{ .Values.mail.port }}}
+{{- end }}

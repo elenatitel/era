@@ -1,0 +1,57 @@
+{{- if .Values.seed.enabled }}
+{{- $secret := .Values.existingSecret -}}
+# Ensures the platform admin (PLATFORM_ADMIN_EMAIL / _PASSWORD) and, for staging, the demo hotel.
+# Idempotent; runs after every sync once the API (and its migrations) is healthy.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-seed
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: seed}
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      imagePullSecrets: {{ .Values.imagePullSecrets | toJson }}
+      nodeSelector: {{ .Values.nodeSelector | toJson }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: seed
+          image: "{{ .Values.image.repository }}@{{ .Values.image.digest }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "dist/db/seed.js"]
+          {{- if .Values.seed.demo }}
+          # --force: the app refuses demo data in production mode unless forced (staging only).
+          args: ["--demo", "--force"]
+          {{- end }}
+          envFrom:
+            - configMapRef: {name: {{ .Release.Name }}-config}
+          env:
+            - name: DATABASE_URL
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: DATABASE_URL}}
+            - name: JWT_SECRET
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: JWT_SECRET}}
+            - name: ENCRYPTION_KEY
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: ENCRYPTION_KEY}}
+            - name: PLATFORM_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: PLATFORM_ADMIN_PASSWORD, optional: true}}
+            - name: DEMO_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: DEMO_PASSWORD, optional: true}}
+          resources: {{ .Values.resources | toJson }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes:
+        - {name: tmp, emptyDir: {}}
+{{- end }}

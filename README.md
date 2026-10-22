@@ -148,7 +148,7 @@ docker build --target web -t era-web .
 
 The `api` image also runs migrations (`node dist/db/migrate.js`), which is what the `migrate` service in `docker-compose.prod.yml` does.
 
-**Kubernetes:** a Helm chart is in [deploy/helm/era](deploy/helm/era/README.md) (api, web, migrations, Ingress; optional PostgreSQL, Mailpit and demo data for staging). CI lints it and publishes the images to `ghcr.io/<owner>/era-api` and `era-web` on every push to `main`.
+**Kubernetes (staging):** three digest-locked Helm charts in [charts/](charts/README.md) (`era-db`, `era-api`, `era-web`) are published with the images to Harbor by `.github/workflows/images.yml` and deployed by Argo CD from `gitops/staging`. Setup and promotion: [docs/ci.md](docs/ci.md).
 
 **Online booking with Stripe:** each hotel uses its own Stripe account. In **Settings → Online booking**, set the web address, paste the publishable and secret keys, add the shown webhook endpoint in Stripe (event `payment_intent.succeeded`) and paste its signing secret. Without keys, online bookings are confirmed at once and paid at the hotel.
 
@@ -164,7 +164,9 @@ apps/api      NestJS API — src/<module>/, drizzle/ (SQL migrations incl. RLS),
 apps/web      Next.js app — src/app/(auth), src/app/(app), src/components, src/lib
 packages/shared  permissions, roles, schemas, helpers used by both
 Dockerfile    builds the api and web images (--target api | web)
-deploy/helm/  Helm chart for Kubernetes (staging and production)
+charts/       Helm charts: era-db, era-api, era-web (Gateway API + Traefik)
+gitops/       Argo CD bootstrap and the staging Applications
+scripts/      package-chart.py (digest-locked charts), promote-staging.py
 docker/       Caddyfile, Postgres init script
 ```
 

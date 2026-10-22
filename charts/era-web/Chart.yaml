@@ -1,0 +1,6 @@
+apiVersion: v2
+name: era-web
+description: era. web app (Next.js) and the staging edge — Gateway API HTTPRoutes and Traefik basic auth
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
