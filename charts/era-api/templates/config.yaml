@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+data:
+  NODE_ENV: production
+  PORT: "4000"
+  APP_NAME: {{ .Values.app.name | quote }}
+  WEB_ORIGIN: {{ .Values.app.webOrigin | quote }}
+  TRUST_PROXY: {{ .Values.app.trustProxy | quote }}
+  LOG_LEVEL: {{ .Values.app.logLevel | quote }}
+  BOOKING_HOLD_MINUTES: {{ .Values.app.bookingHoldMinutes | quote }}
+  DATABASE_SSL: {{ .Values.database.ssl | quote }}
+  MAIL_FROM: {{ .Values.app.mailFrom | quote }}
+  {{- if .Values.mailpit.enabled }}
+  SMTP_HOST: {{ printf "%s-mailpit" .Release.Name | quote }}
+  SMTP_PORT: "1025"
+  SMTP_SECURE: "false"
+  {{- else if .Values.app.smtp.host }}
+  SMTP_HOST: {{ .Values.app.smtp.host | quote }}
+  SMTP_PORT: {{ .Values.app.smtp.port | quote }}
+  SMTP_SECURE: {{ .Values.app.smtp.secure | quote }}
+  SMTP_USER: {{ .Values.app.smtp.user | quote }}
+  {{- end }}
+  {{- with .Values.app.platformAdminEmail }}
+  PLATFORM_ADMIN_EMAIL: {{ . | quote }}
+  {{- end }}

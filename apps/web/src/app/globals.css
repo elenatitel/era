@@ -1,0 +1,166 @@
+@import 'tailwindcss';
+
+/* `night:` styles apply while the staff app is in its night-shift palette. */
+@custom-variant night (&:where([data-theme='night'], [data-theme='night'] *));
+
+/* era. "Sunlit" theme with a night-shift variant. Use the semantic names, never raw hex in components. */
+@theme inline {
+  --color-navy-900: #1b2438;
+  --color-navy-800: #2c3a5a;
+  --color-navy-700: #3d507c;
+  --color-navy-500: #4e669e;
+  --color-mist: #e6e6e6;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-on-brand: var(--on-brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-on-brand-soft: var(--on-brand-soft);
+  --color-accent: var(--accent);
+  --color-focus: var(--focus);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-danger-fill: var(--danger-fill);
+  --color-on-danger: var(--on-danger);
+  --color-sun: var(--sun);
+  --color-on-sun: var(--on-sun);
+  --color-lit: var(--lit);
+  --color-on-lit: var(--on-lit);
+  --color-glass-dark: var(--glass-dark);
+
+  --font-sans: var(--font-instrument-sans), 'Segoe UI', system-ui, sans-serif;
+  --font-display: var(--font-instrument-serif), 'Iowan Old Style', Georgia, serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, Menlo, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-2xl: 28px;
+  --shadow-card: none;
+  --shadow-pop: 0 12px 32px rgba(27, 36, 56, 0.18);
+}
+
+:root {
+  /* Sunlit (day): warm stone ground, white cards, navy pills, one sunny highlight. */
+  --canvas: #ece9e2;
+  --surface: #ffffff;
+  --subtle: #f4f2ed;
+  --line: #e2ded5;
+  --line-strong: #8d8a82;
+  --ink: #15171c;
+  --muted: #5e636e;
+  --faint: #8b8f98;
+  --brand: #1b2438;
+  --brand-hover: #0f1524;
+  --on-brand: #ffffff;
+  --brand-soft: #f1f5c4;
+  --on-brand-soft: #15171c;
+  --accent: #3d507c;
+  --focus: #3d507c;
+  --sun: #e6ef5a;
+  --on-sun: #15171c;
+  --lit: #f3c969;
+  --on-lit: #3a2600;
+  --glass-dark: #2b3550;
+  --success: #24542d;
+  --success-soft: #ddebd9;
+  --warning: #7a3e06;
+  --warning-soft: #f6e2ca;
+  --danger: #9a2a1f;
+  --danger-soft: #f7d4d0;
+  --info: #23457a;
+  --info-soft: #dce6f7;
+  --danger-fill: #b42335;
+  --on-danger: #ffffff;
+  color-scheme: light;
+}
+
+/* Night shift: set by the app from the property's local time (or the user's choice), never by the OS. */
+:root[data-theme='night'] {
+  --canvas: #0f1219;
+  --surface: #1a1f2b;
+  --subtle: #222836;
+  --line: #2c3343;
+  --line-strong: #5f6779;
+  --ink: #f1eee6;
+  --muted: #a9afbc;
+  --faint: #7c8392;
+  --brand: #e6ef5a;
+  --brand-hover: #f0f59a;
+  --on-brand: #15171c;
+  --brand-soft: #2c3220;
+  --on-brand-soft: #eef3b0;
+  --accent: #c9d3f0;
+  --focus: #e6ef5a;
+  --sun: #e6ef5a;
+  --on-sun: #15171c;
+  --lit: #f3c969;
+  --on-lit: #3a2600;
+  --glass-dark: #343b4b;
+  --success: #9bd5a9;
+  --success-soft: #1e3326;
+  --warning: #f3c27a;
+  --warning-soft: #3a2a14;
+  --danger: #f2a094;
+  --danger-soft: #3d1c1a;
+  --info: #a9c4f0;
+  --info-soft: #1c2a44;
+  --danger-fill: #e2697a;
+  --on-danger: #15171c;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.eyebrow {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+@media print {
+  body {
+    background: #fff;
+    color: #000;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Iconography: Lucide outline icons at a 1.75px stroke (design system rule). */
+svg.lucide {
+  stroke-width: 1.75;
+}

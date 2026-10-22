@@ -1,0 +1,6 @@
+apiVersion: v2
+name: era-api
+description: era. API (NestJS) with database migrations, optional seed job and Mailpit test inbox
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

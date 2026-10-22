@@ -1,0 +1,40 @@
+# The web image is locked by digest. CI publishes a copy of this chart with each build's digest;
+# the zero digest below is only a placeholder for linting the source chart.
+image:
+  repository: harbor.cloud.retreat480.com/era/web
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  pullPolicy: IfNotPresent
+replicas: 1
+
+# Requests to /api go straight to the API service (released by the era-api chart).
+apiService: era-api
+apiPort: 4000
+
+route:
+  enabled: true
+  hostname: era-staging.cloud.retreat480.com
+  gatewayName: traefik-gateway
+  gatewayNamespace: traefik
+  sectionName: web
+
+# Mailpit inbox (service released by the era-api chart).
+mail:
+  enabled: true
+  hostname: era-staging-mail.cloud.retreat480.com
+  service: era-api-mailpit
+  port: 8025
+
+# Traefik basic auth in front of everything. The Secret is created in the namespace, never in Git;
+# key "users" holds htpasswd lines:
+#   htpasswd -nb tester 'a-long-password' > users
+#   kubectl -n era-staging create secret generic era-staging-basic-auth --from-file=users
+auth:
+  enabled: true
+  existingSecret: era-staging-basic-auth
+
+resources:
+  requests: {cpu: 100m, memory: 192Mi}
+  limits: {cpu: "1", memory: 512Mi}
+nodeSelector: {}
+imagePullSecrets:
+  - name: harbor-era-pull

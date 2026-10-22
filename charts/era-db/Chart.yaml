@@ -1,0 +1,6 @@
+apiVersion: v2
+name: era-db
+description: era. staging PostgreSQL on a retained local volume (digest-pinned image)
+type: application
+version: 0.1.0
+appVersion: "17-alpine"

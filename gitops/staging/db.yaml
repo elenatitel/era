@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: era-db
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: era-staging
+  source:
+    repoURL: harbor.cloud.retreat480.com/era
+    chart: era-db
+    targetRevision: 0.1.0-ci.1.1
+    helm:
+      releaseName: era-db
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: era-staging
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true

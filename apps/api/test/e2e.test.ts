@@ -1,0 +1,822 @@
+import { after, before, describe, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import type { INestApplication } from '@nestjs/common';
+import { addDays } from '@pms/shared';
+import { Client, startDatabase, startFakeStripe } from './harness.js';
+
+const ORIGIN = 'http://localhost:3000';
+const DEMO_PASSWORD = 'Demo-password-123';
+const ADMIN = { email: 'admin@platform.test', password: 'Platform-admin-pass-1' };
+
+let db: Awaited<ReturnType<typeof startDatabase>>;
+let stripe: Awaited<ReturnType<typeof startFakeStripe>>;
+let app: INestApplication;
+let base: string;
+let mail: { outbox: { to: string; subject: string; text: string }[] };
+let totpAt: (secret: string, counter: number) => string;
+
+const client = () => new Client(base, ORIGIN).init();
+async function login(email: string, password = DEMO_PASSWORD) {
+  const c = await client();
+  const res = await c.post('/auth/login', { email, password });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  return c;
+}
+const tokenFromMail = (to: string) => {
+  const msg = [...mail.outbox].reverse().find((m) => m.to === to);
+  assert.ok(msg, `no mail for ${to}`);
+  return /\/(?:invite|reset-password)\/([\w-]+)/.exec(msg.text)![1]!;
+};
+/** A TOTP code for a time step not used before (the API rejects replays; ±1 step drift is accepted). */
+let lastStep = -Infinity;
+function freshCode(secret: string) {
+  const step = Math.max(Math.floor(Date.now() / 30_000), lastStep + 1);
+  lastStep = step;
+  return totpAt(secret, step);
+}
+
+before(async () => {
+  db = await startDatabase();
+  stripe = await startFakeStripe();
+  const { runMigrations } = await import('../src/db/migrate.js');
+  await runMigrations(db.ownerUrl, db.appUrl, fileURLToPath(new URL('../../drizzle', import.meta.url)));
+  Object.assign(process.env, {
+    NODE_ENV: 'test',
+    DATABASE_URL: db.appUrl,
+    JWT_SECRET: randomBytes(32).toString('hex'),
+    ENCRYPTION_KEY: randomBytes(32).toString('base64'),
+    WEB_ORIGIN: ORIGIN,
+    COOKIE_SECURE: 'false',
+    LOG_LEVEL: 'error',
+    TRUST_PROXY: '0',
+    STRIPE_API_BASE: stripe.base,
+  });
+  const { createApp } = await import('../src/bootstrap.js');
+  const { DbService } = await import('../src/db/db.service.js');
+  const { MailService } = await import('../src/mail/mail.service.js');
+  const { ensurePlatformAdmin, seedDemo } = await import('../src/db/seed.js');
+  ({ totpAt } = await import('../src/common/totp.js'));
+  app = await createApp();
+  await app.listen(0, '127.0.0.1');
+  const addr = app.getHttpServer().address() as { port: number };
+  base = `http://127.0.0.1:${addr.port}`;
+  mail = app.get(MailService);
+  const dbs = app.get(DbService);
+  await ensurePlatformAdmin(dbs, ADMIN.email, ADMIN.password);
+  await seedDemo(dbs, DEMO_PASSWORD);
+});
+
+after(async () => {
+  await app?.close();
+  await db?.stop();
+  await stripe?.stop();
+});
+
+describe('database hardening', () => {
+  test('every tenant table has forced row-level security', async () => {
+    const { TENANT_TABLES } = await import('../src/db/schema.js');
+    const rows = await db.superQuery<{ relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+      `select relname, relrowsecurity, relforcerowsecurity from pg_class where relname = any($1)`,
+      [TENANT_TABLES],
+    );
+    assert.equal(rows.length, TENANT_TABLES.length);
+    for (const r of rows) assert.ok(r.relrowsecurity && r.relforcerowsecurity, `${r.relname} lacks forced RLS`);
+  });
+
+  test('app role sees no tenant rows without a tenant context', async () => {
+    const pg = (await import('pg')).default;
+    const c = new pg.Client({ connectionString: db.appUrl });
+    await c.connect();
+    const { rows } = await c.query('select count(*)::int as n from guests');
+    const insert = await c.query(`insert into guests (tenant_id, first_name, last_name) select id, 'x', 'y' from tenants limit 1`).catch((e) => e);
+    const audit = await c.query(`delete from audit_logs`).catch((e) => e);
+    await c.end();
+    assert.equal(rows[0].n, 0);
+    assert.match(String(insert.message), /row-level security/);
+    assert.match(String(audit.message), /permission denied/);
+  });
+});
+
+describe('authentication', () => {
+  test('health is public', async () => {
+    const c = await client();
+    assert.equal((await c.get('/health')).status, 200);
+  });
+
+  test('protected routes require a session', async () => {
+    const c = await client();
+    assert.equal((await c.get('/auth/me')).status, 401);
+  });
+
+  test('state-changing requests require the CSRF token and same origin', async () => {
+    const c = await client();
+    const noToken = await c.req('POST', '/auth/login', { email: 'owner@demo.test', password: DEMO_PASSWORD }, { csrf: false });
+    assert.equal(noToken.status, 403);
+    assert.equal(noToken.body.error.code, 'CSRF');
+    const evil = new Client(base, 'https://evil.example');
+    await evil.init();
+    assert.equal((await evil.post('/auth/login', { email: 'owner@demo.test', password: DEMO_PASSWORD })).status, 403);
+  });
+
+  test('login selects the only organization and exposes permissions', async () => {
+    const c = await login('frontdesk@demo.test');
+    const me = await c.get('/auth/me');
+    assert.equal(me.status, 200);
+    assert.equal(me.body.tenant.slug, 'demo');
+    assert.ok(me.body.permissions.includes('frontdesk.checkin'));
+    assert.ok(!me.body.permissions.includes('roles.manage'));
+    assert.ok(!c.cookies.get('pms_at')!.includes(DEMO_PASSWORD));
+  });
+
+  test('wrong passwords are rejected and the account locks after 5 attempts', async () => {
+    const c = await client();
+    for (let i = 0; i < 5; i++) {
+      const r = await c.post('/auth/login', { email: 'revenue@demo.test', password: 'wrong-password-x1' });
+      assert.equal(r.status, 401);
+    }
+    const locked = await c.post('/auth/login', { email: 'revenue@demo.test', password: DEMO_PASSWORD });
+    assert.equal(locked.body.error.code, 'ACCOUNT_LOCKED');
+    await db.superQuery(`update users set locked_until = null where email = 'revenue@demo.test'`);
+  });
+
+  test('refresh tokens rotate and reuse revokes the session family', async () => {
+    const c = await login('accounting@demo.test');
+    const oldRefresh = c.cookies.get('pms_rt')!;
+    assert.equal((await c.post('/auth/refresh')).status, 204);
+    assert.notEqual(c.cookies.get('pms_rt'), oldRefresh);
+    assert.equal((await c.get('/auth/me')).status, 200);
+    // Within the grace window a stale token is answered with a retry hint, not a lockout.
+    const attacker = await client();
+    attacker.cookies.set('pms_rt', oldRefresh);
+    assert.equal((await attacker.post('/auth/refresh')).body.error.code, 'REFRESH_RACE');
+    // After the grace window, reuse is treated as theft: the whole family is revoked.
+    await db.superQuery(`update sessions set revoked_at = now() - interval '5 minutes' where revoked_reason = 'rotated'`);
+    assert.equal((await attacker.post('/auth/refresh')).status, 401);
+    assert.equal((await c.get('/auth/me')).status, 401);
+  });
+
+  test('logout revokes the session immediately', async () => {
+    const c = await login('manager@demo.test');
+    const access = c.cookies.get('pms_at')!;
+    assert.equal((await c.post('/auth/logout')).status, 204);
+    const replay = await client();
+    replay.cookies.set('pms_at', access);
+    assert.equal((await replay.get('/auth/me')).status, 401);
+  });
+
+  test('password reset flow', async () => {
+    const c = await client();
+    assert.equal((await c.post('/auth/password/forgot', { email: 'nobody@demo.test' })).status, 202);
+    assert.equal((await c.post('/auth/password/forgot', { email: 'hk-lead@demo.test' })).status, 202);
+    const token = tokenFromMail('hk-lead@demo.test');
+    assert.equal((await c.post('/auth/password/reset', { token, password: 'short' })).status, 422);
+    assert.equal((await c.post('/auth/password/reset', { token, password: 'New-password-2026!' })).status, 204);
+    assert.equal((await c.post('/auth/password/reset', { token, password: 'New-password-2026!' })).status, 400);
+    await login('hk-lead@demo.test', 'New-password-2026!');
+  });
+});
+
+let tenantB: { id: string };
+let ownerB: Client;
+
+describe('platform administration and tenant isolation', () => {
+  let adminSecret: string;
+  let admin: Client;
+
+  test('platform routes require MFA', async () => {
+    admin = await login(ADMIN.email, ADMIN.password);
+    assert.equal((await admin.get('/platform/tenants')).body.error.code, 'MFA_SETUP_REQUIRED');
+    const setup = await admin.post('/auth/mfa/setup');
+    adminSecret = setup.body.secret;
+    assert.match(setup.body.qrDataUrl, /^data:image\/png;base64,/);
+    const enabled = await admin.post('/auth/mfa/enable', { code: freshCode(adminSecret) });
+    assert.equal(enabled.status, 200);
+    assert.equal(enabled.body.recoveryCodes.length, 10);
+    assert.equal((await admin.get('/platform/tenants')).status, 200);
+  });
+
+  test('MFA login requires a valid second factor and rejects replays', async () => {
+    const c = await client();
+    const step1 = await c.post('/auth/login', ADMIN);
+    assert.equal(step1.body.mfaRequired, true);
+    assert.equal((await c.post('/auth/login/mfa', { mfaToken: step1.body.mfaToken, code: '000000' })).status, 401);
+    const code = freshCode(adminSecret);
+    assert.equal((await c.post('/auth/login/mfa', { mfaToken: step1.body.mfaToken, code })).status, 200);
+    const again = await (await client()).post('/auth/login', ADMIN);
+    const replay = await (await client()).post('/auth/login/mfa', { mfaToken: again.body.mfaToken, code });
+    assert.equal(replay.status, 401);
+    admin = c;
+  });
+
+  test('non-admins cannot reach platform routes', async () => {
+    const c = await login('owner@demo.test');
+    assert.equal((await c.get('/platform/tenants')).status, 403);
+  });
+
+  test('creating a tenant invites its owner', async () => {
+    const res = await admin.post('/platform/tenants', { name: 'Other Hotel Group', slug: 'other', ownerEmail: 'boss@other.test', ownerName: 'Boss' });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    tenantB = res.body;
+    const token = tokenFromMail('boss@other.test');
+    const anon = await client();
+    assert.equal((await anon.get(`/auth/invitations/${token}`)).body.organization, 'Other Hotel Group');
+    assert.equal((await anon.post('/auth/invitations/accept', { token, name: 'Boss', password: 'Boss-password-2026' })).status, 200);
+    assert.equal((await anon.post('/auth/invitations/accept', { token, name: 'Boss', password: 'Boss-password-2026' })).status, 400);
+    ownerB = await login('boss@other.test', 'Boss-password-2026');
+    const me = await ownerB.get('/auth/me');
+    assert.equal(me.body.tenant.id, tenantB.id);
+    assert.equal(me.body.role.key, 'owner');
+    // English is the default language for new organizations and the people they invite.
+    assert.equal(me.body.user.locale, 'en');
+    assert.equal(me.body.tenant.defaultLocale, 'en');
+  });
+
+  test('tenant B cannot see or touch tenant A data', async () => {
+    const a = await login('owner@demo.test');
+    const guestsA = await a.get('/guests');
+    assert.ok(guestsA.body.total >= 5);
+    const someGuest = guestsA.body.items[0].id;
+    const props = (await a.get('/properties')).body;
+    assert.equal((await ownerB.get('/guests')).body.total, 0);
+    assert.equal((await ownerB.get(`/guests/${someGuest}`)).status, 404);
+    assert.equal((await ownerB.patch(`/guests/${someGuest}`, { notes: 'pwned' })).status, 404);
+    assert.equal((await ownerB.get(`/properties/${props[0].id}`)).status, 404);
+    assert.equal((await ownerB.get(`/rooms?propertyId=${props[0].id}`)).status, 404);
+    // Switching into a tenant you do not belong to is refused.
+    const demoTenant = (await a.get('/auth/me')).body.tenant.id;
+    assert.equal((await ownerB.post('/auth/switch-tenant', { tenantId: demoTenant })).status, 403);
+  });
+
+  test('suspending a tenant blocks its users', async () => {
+    assert.equal((await admin.patch(`/platform/tenants/${tenantB.id}/status`, { status: 'suspended' })).status, 200);
+    assert.equal((await ownerB.get('/guests')).body.error.code, 'TENANT_SUSPENDED');
+    await admin.patch(`/platform/tenants/${tenantB.id}/status`, { status: 'active' });
+    assert.equal((await ownerB.get('/guests')).status, 200);
+  });
+});
+
+describe('roles and permissions', () => {
+  test('housekeepers cannot see guests or reservations', async () => {
+    const c = await login('housekeeper@demo.test');
+    assert.equal((await c.get('/guests')).status, 403);
+    assert.equal((await c.post('/reservations', {})).status, 403);
+    assert.equal((await c.get('/members')).status, 403);
+  });
+
+  test('document numbers are masked without guests.pii', async () => {
+    const acc = await login('accounting@demo.test');
+    const vip = (await acc.get('/guests?q=Popa')).body.items[0];
+    assert.match(vip.documentNumber, /^\*+3456$/);
+    const fd = await login('frontdesk@demo.test');
+    assert.equal((await fd.get(`/guests/${vip.id}`)).body.documentNumber, 'BV123456');
+  });
+
+  test('privilege escalation is blocked', async () => {
+    const owner = await login('owner@demo.test');
+    const roles = (await owner.get('/roles')).body as { id: string; key: string }[];
+    const ownerRole = roles.find((r) => r.key === 'owner')!;
+    const manager = await login('manager@demo.test');
+    // Managers can invite, but not as owner and not with permissions they lack.
+    assert.equal((await manager.post('/invitations', { email: 'x@demo.test', roleId: ownerRole.id })).status, 403);
+    assert.equal((await manager.post('/roles', { name: 'Super', permissions: ['roles.manage'] })).status, 403);
+    const custom = await owner.post('/roles', { name: 'Night Auditor', permissions: ['property.read', 'property.manage', 'reports.read'] });
+    assert.equal(custom.status, 201);
+    assert.equal((await owner.put(`/roles/${ownerRole.id}`, { name: 'Owner', permissions: [] })).status, 403);
+    // The last owner cannot be demoted.
+    const members = (await owner.get('/members')).body as { id: string; email: string }[];
+    const self = members.find((m) => m.email === 'owner@demo.test')!;
+    assert.equal((await owner.patch(`/members/${self.id}`, { roleId: custom.body.id })).status, 403);
+  });
+
+  test('disabling a member revokes their sessions', async () => {
+    const owner = await login('owner@demo.test');
+    const rev = await login('revenue@demo.test');
+    assert.equal((await rev.get('/rate-plans?propertyId=' + (await rev.get('/properties')).body[0].id)).status, 200);
+    const members = (await owner.get('/members')).body as { id: string; email: string }[];
+    const m = members.find((x) => x.email === 'revenue@demo.test')!;
+    assert.equal((await owner.patch(`/members/${m.id}`, { status: 'disabled' })).status, 200);
+    assert.equal((await rev.get('/properties')).status, 401);
+    await owner.patch(`/members/${m.id}`, { status: 'active' });
+  });
+});
+
+describe('hotel operations', () => {
+  let fd: Client;
+  let propertyId: string;
+  let businessDate: string;
+
+  before(async () => {
+    fd = await login('frontdesk@demo.test');
+    const props = (await fd.get('/properties')).body;
+    propertyId = props[0].id;
+    businessDate = props[0].businessDate;
+  });
+
+  test('dashboard hides financials without reports.read', async () => {
+    const dash = (await fd.get(`/dashboard?propertyId=${propertyId}`)).body;
+    assert.equal(dash.financial, null);
+    assert.equal(dash.rooms.total, 17);
+    const mgr = await login('manager@demo.test');
+    const full = (await mgr.get(`/dashboard?propertyId=${propertyId}`)).body;
+    assert.ok(full.financial);
+    assert.equal(typeof full.financial.paymentsToday.total, 'number');
+    assert.ok(Array.isArray(full.attention.roomsNotReady));
+    assert.equal(typeof full.housekeeping.total, 'number');
+  });
+
+  test('availability and overbooking protection under concurrency', async () => {
+    const avail = (await fd.get(`/availability?propertyId=${propertyId}&arrival=${businessDate}&departure=${addDays(businessDate, 2)}&adults=2`)).body;
+    const ste = avail.roomTypes.find((r: any) => r.roomType.code === 'STE');
+    assert.equal(ste.available, 2);
+    const bar = ste.offers.find((o: any) => o.ratePlanName === 'Best Available Rate');
+    const body = {
+      propertyId,
+      roomTypeId: ste.roomType.id,
+      ratePlanId: bar.ratePlanId,
+      arrival: businessDate,
+      departure: addDays(businessDate, 2),
+      adults: 2,
+      guest: { firstName: 'Race', lastName: 'Condition' },
+    };
+    const results = await Promise.all([1, 2, 3, 4].map(() => fd.post('/reservations', body)));
+    const ok = results.filter((r) => r.status === 201);
+    assert.equal(ok.length, 2, JSON.stringify(results.map((r) => r.status)));
+    assert.ok(results.filter((r) => r.status === 409).every((r) => r.body.error.code === 'NO_AVAILABILITY'));
+    assert.equal(ok[0]!.body.totalAmount, 130000);
+  });
+
+  test('the same room cannot be assigned to overlapping stays', async () => {
+    const res = (await fd.get(`/reservations?propertyId=${propertyId}&q=Condition`)).body.items;
+    const rooms = (await fd.get(`/rooms?propertyId=${propertyId}`)).body.filter((r: any) => r.roomTypeCode === 'STE');
+    const free = rooms.find((r: any) => r.number === '302');
+    assert.equal((await fd.patch(`/reservations/${res[0].id}`, { roomId: free.id })).status, 200);
+    const clash = await fd.patch(`/reservations/${res[1].id}`, { roomId: free.id });
+    assert.equal(clash.status, 409);
+    assert.equal(clash.body.error.code, 'ROOM_CONFLICT');
+  });
+
+  test('full stay: check-in, charges, balance, payment, check-out, invoice, credit note', async () => {
+    const list = (await fd.get(`/reservations?propertyId=${propertyId}&q=Martin`)).body.items;
+    const resv = list[0];
+    const freeRooms = (await fd.get(`/reservations/${resv.id}/free-rooms`)).body;
+    const dirty = freeRooms.find((r: any) => r.status === 'dirty');
+    const clean = freeRooms.find((r: any) => r.status === 'clean');
+    assert.equal((await fd.post(`/reservations/${resv.id}/check-in`, { roomId: dirty.id })).body.error.code, 'ROOM_NOT_READY');
+    assert.equal((await fd.post(`/reservations/${resv.id}/check-in`, { roomId: clean.id })).status, 200);
+
+    assert.equal((await fd.post(`/reservations/${resv.id}/charges`, { category: 'minibar', description: 'Minibar', quantity: 2, unitPrice: 1500 })).status, 201);
+    // Night audit as manager posts tonight's room charge and advances the business date.
+    const mgr = await login('manager@demo.test');
+    const audit = await mgr.post(`/properties/${propertyId}/night-audit`);
+    assert.equal(audit.status, 200, JSON.stringify(audit.body));
+    assert.ok(audit.body.roomChargesPosted >= 2);
+    assert.equal(audit.body.newBusinessDate, addDays(businessDate, 1));
+    assert.ok(audit.body.noShows.length >= 1, 'unarrived guests become no-shows');
+    // Running it again for a future date is refused.
+    assert.equal((await mgr.post(`/properties/${propertyId}/night-audit`)).status, 409);
+
+    const blocked = await fd.post(`/reservations/${resv.id}/check-out`, {});
+    assert.equal(blocked.body.error.code, 'OUTSTANDING_BALANCE');
+    const due = blocked.body.error.details.balance;
+    // Early departure: only the one audited night is charged, plus the minibar.
+    assert.equal(due, 33000 + 3000);
+    assert.equal((await fd.post(`/reservations/${resv.id}/payments`, { method: 'card', amount: -100 })).status, 403);
+    const paid = await fd.post(`/reservations/${resv.id}/payments`, { method: 'card', amount: due, reference: 'POS-1' });
+    assert.equal(paid.body.totals.balance, 0);
+    const out = await fd.post(`/reservations/${resv.id}/check-out`, {});
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+
+    const hk = (await fd.get(`/rooms?propertyId=${propertyId}`)).body.find((r: any) => r.id === clean.id);
+    assert.equal(hk.status, 'dirty');
+    assert.equal(hk.occupancy, 'vacant');
+
+    const inv = await fd.post('/invoices', { propertyId, type: 'invoice', reservationId: resv.id });
+    assert.equal(inv.status, 201, JSON.stringify(inv.body));
+    assert.equal(inv.body.fullNumber, 'HC-000001');
+    assert.equal(inv.body.total, due);
+    assert.equal(inv.body.status, 'paid');
+    assert.equal((await fd.post('/invoices', { propertyId, type: 'invoice', reservationId: resv.id })).status, 409);
+    const full = (await fd.get(`/invoices/${inv.body.id}`)).body;
+    assert.equal(full.lines.length, 2);
+    assert.equal(full.vatTotal, full.lines.reduce((s: number, l: any) => s + l.vat, 0));
+    // Front desk cannot cancel invoices; accountants can, producing a credit note.
+    assert.equal((await fd.post(`/invoices/${inv.body.id}/cancel`, { reason: 'Wrong company' })).status, 403);
+    const acc = await login('accounting@demo.test');
+    const storno = await acc.post(`/invoices/${inv.body.id}/cancel`, { reason: 'Wrong company' });
+    assert.equal(storno.status, 200);
+    assert.equal(storno.body.creditNote.total, -due);
+    assert.equal(storno.body.creditNote.fullNumber, 'HC-CN-000001');
+    // Charges are free to be invoiced again, with the next gapless number.
+    assert.equal((await acc.post('/invoices', { propertyId, type: 'invoice', reservationId: resv.id })).body.fullNumber, 'HC-000002');
+    const audit_ = await (await login('owner@demo.test')).get('/audit-log?pageSize=200');
+    assert.ok(audit_.body.items.some((e: any) => e.action === 'invoice.cancelled'));
+  });
+
+  test('housekeeping: supervisors assign, housekeepers only see and finish their own tasks', async () => {
+    const lead = await login('hk-lead@demo.test', 'New-password-2026!');
+    const board = (await lead.get(`/housekeeping/board?propertyId=${propertyId}`)).body;
+    const staff = (await lead.get(`/housekeeping/staff?propertyId=${propertyId}`)).body;
+    const maid = staff.find((s: any) => s.name === 'Maria Georgescu');
+    assert.ok(maid);
+    const gen = await lead.post('/housekeeping/generate', { propertyId, date: board.businessDate });
+    assert.equal(gen.status, 201);
+    const tasks = (await lead.get(`/housekeeping/tasks?propertyId=${propertyId}`)).body;
+    assert.ok(tasks.length >= 1);
+    const task = tasks.find((t: any) => t.type === 'checkout_clean') ?? tasks[0];
+    assert.equal((await lead.patch(`/housekeeping/tasks/${task.id}`, { assignedToUserId: maid.userId })).status, 200);
+
+    const hk = await login('housekeeper@demo.test');
+    const mine = (await hk.get(`/housekeeping/tasks?propertyId=${propertyId}`)).body;
+    assert.deepEqual(mine.map((t: any) => t.id), [task.id]);
+    const other = tasks.find((t: any) => t.id !== task.id);
+    if (other) assert.equal((await hk.patch(`/housekeeping/tasks/${other.id}`, { status: 'done' })).status, 403);
+    assert.equal((await hk.patch(`/housekeeping/tasks/${task.id}`, { status: 'inspected' })).status, 409);
+    assert.equal((await hk.patch(`/housekeeping/tasks/${task.id}`, { status: 'done' })).status, 200);
+    assert.equal((await hk.put(`/rooms/${task.roomId}/status`, { status: 'out_of_order' })).status, 403);
+    assert.equal((await lead.patch(`/housekeeping/tasks/${task.id}`, { status: 'inspected' })).status, 200);
+    const room = (await lead.get(`/rooms?propertyId=${propertyId}`)).body.find((r: any) => r.id === task.roomId);
+    assert.equal(room.status, 'inspected');
+  });
+
+  test('GDPR export and anonymization', async () => {
+    const owner = await login('owner@demo.test');
+    const g = await owner.post('/guests', { firstName: 'Erase', lastName: 'Me', email: 'erase@example.com', documentNumber: 'X999' });
+    assert.equal(g.status, 201);
+    const exp = await owner.get(`/guests/${g.body.id}/gdpr-export`);
+    assert.equal(exp.body.profile.documentNumber, 'X999');
+    assert.equal((await fd.get(`/guests/${g.body.id}/gdpr-export`)).status, 403);
+    assert.equal((await owner.post(`/guests/${g.body.id}/anonymize`)).status, 204);
+    const after = (await owner.get(`/guests/${g.body.id}`)).body;
+    assert.equal(after.email, null);
+    assert.equal(after.lastName, 'Guest');
+    const raw = await db.superQuery<{ document_number_enc: string | null }>(`select document_number_enc from guests where id = $1`, [g.body.id]);
+    assert.equal(raw[0]!.document_number_enc, null);
+  });
+
+  test('validation errors are reported per field', async () => {
+    const r = await fd.post('/reservations', { propertyId, arrival: '2026-01-05', departure: '2026-01-01' });
+    assert.equal(r.status, 422);
+    assert.ok(r.body.error.details.length > 0);
+    assert.equal((await fd.get('/guests/not-a-uuid')).status, 400);
+  });
+});
+
+describe('guest journey: booking engine, payment and online check-in', () => {
+  const WEBHOOK_SECRET = 'whsec_testsecret123';
+  let owner: Client;
+  let propertyId: string;
+  let arrival: string;
+  let departure: string;
+  let roomTypeId: string;
+  let ratePlanId: string;
+
+  const linkFromMail = (to: string) => {
+    const msg = [...mail.outbox].reverse().find((m) => m.to === to && /\/stay\//.test(m.text));
+    assert.ok(msg, `no booking e-mail for ${to}`);
+    return /\/stay\/([\w-]+)/.exec(msg.text)![1]!;
+  };
+  const codeFromMail = (to: string) => {
+    const msg = [...mail.outbox].reverse().find((m) => m.to === to && /\b\d{6}\b/.test(m.subject));
+    assert.ok(msg, `no code e-mail for ${to}`);
+    return /\b(\d{6})\b/.exec(msg.subject)![1]!;
+  };
+  const bookingBody = (email: string, extra: Record<string, unknown> = {}) => ({
+    roomTypeId,
+    ratePlanId,
+    arrival,
+    departure,
+    adults: 2,
+    guest: { firstName: 'Sophie', lastName: 'Online', email, phone: '+33 6 00 00 00 00' },
+    estimatedArrival: '16:00 – 17:00',
+    acceptTerms: true,
+    ...extra,
+  });
+
+  before(async () => {
+    owner = await login('owner@demo.test');
+    const props = (await owner.get('/properties')).body;
+    propertyId = props[0].id;
+    arrival = addDays(props[0].businessDate, 20);
+    departure = addDays(arrival, 2);
+  });
+
+  test('a hotel publishes its booking page; disabled or unknown pages are not found', async () => {
+    const guest = await client();
+    const off = await owner.put(`/properties/${propertyId}/online-booking`, { slug: 'carpati', enabled: false });
+    assert.equal(off.status, 200, JSON.stringify(off.body));
+    assert.equal((await guest.get('/public/sites/carpati')).status, 404);
+    const on = await owner.put(`/properties/${propertyId}/online-booking`, { slug: 'carpati', enabled: true });
+    assert.equal(on.body.bookingUrl, 'http://localhost:3000/book/carpati');
+    assert.equal(on.body.paymentsEnabled, false);
+    const site = await guest.get('/public/sites/carpati');
+    assert.equal(site.status, 200);
+    assert.equal(site.body.name, 'Hotel Carpați');
+    assert.equal(site.body.payments, null);
+    assert.equal((await guest.get('/public/sites/nope-hotel')).status, 404);
+    // Front desk staff cannot change online booking settings.
+    const fd = await login('frontdesk@demo.test');
+    assert.equal((await fd.put(`/properties/${propertyId}/online-booking`, { slug: 'x-hotel', enabled: true })).status, 403);
+  });
+
+  test('guests see live availability and prices', async () => {
+    const guest = await client();
+    const avail = await guest.get(`/public/sites/carpati/availability?arrival=${arrival}&departure=${departure}&adults=2`);
+    assert.equal(avail.status, 200, JSON.stringify(avail.body));
+    const dbl = avail.body.roomTypes.find((r: any) => r.name === 'Double Room');
+    assert.ok(dbl.available > 0);
+    const bar = dbl.offers.find((o: any) => o.name === 'Best Available Rate');
+    assert.equal(bar.total, 70000);
+    roomTypeId = dbl.id;
+    ratePlanId = bar.ratePlanId;
+    assert.equal((await guest.get(`/public/sites/carpati/availability?arrival=2020-01-01&departure=2020-01-03`)).status, 422);
+  });
+
+  test('without Stripe, a booking is confirmed at once and the guest gets a private link', async () => {
+    const guest = await client();
+    const res = await guest.post('/public/sites/carpati/bookings', bookingBody('sophie.online@example.com'));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.status, 'confirmed');
+    assert.equal(res.body.payment, null);
+    assert.equal(linkFromMail('sophie.online@example.com'), res.body.token);
+    const staff = (await owner.get(`/reservations?propertyId=${propertyId}&q=${res.body.code}`)).body.items[0];
+    assert.equal(staff.source, 'website');
+    assert.equal(staff.status, 'confirmed');
+    // Terms must be accepted.
+    assert.equal((await guest.post('/public/sites/carpati/bookings', bookingBody('x@example.com', { acceptTerms: false }))).status, 422);
+  });
+
+  test('the private link alone shows the stay; changes need the e-mailed code', async () => {
+    const token = linkFromMail('sophie.online@example.com');
+    const stranger = await client();
+    const view = await stranger.get(`/public/stay/${token}`);
+    assert.equal(view.status, 200);
+    assert.equal(view.body.verified, false);
+    assert.equal(view.body.checkin, null);
+    assert.equal(view.body.guest.lastName, null);
+    assert.match(view.body.guest.email, /^s\*+e@example\.com$/);
+    assert.equal((await stranger.get('/public/stay/not-a-real-token-but-long-enough-xxxxxxxx')).status, 404);
+
+    const checkin = {
+      mainGuest: { birthDate: '1990-04-12', nationality: 'FR', documentType: 'passport', documentNumber: '19AB12345', address: '1 Rue X', country: 'FR' },
+      companions: [{ firstName: 'Luc', lastName: 'Online', documentType: 'id_card', documentNumber: 'ZZ998877' }],
+      estimatedArrival: '18:00 – 19:00',
+      requests: 'Quiet room',
+      confirm: true,
+    };
+    const denied = await stranger.post(`/public/stay/${token}/check-in`, checkin);
+    assert.equal(denied.body.error.code, 'GUEST_VERIFICATION_REQUIRED');
+
+    assert.equal((await stranger.post(`/public/stay/${token}/code`)).status, 200);
+    assert.equal((await stranger.post(`/public/stay/${token}/verify`, { code: '000000' === codeFromMail('sophie.online@example.com') ? '111111' : '000000' })).body.error.code, 'INVALID_CODE');
+    assert.equal((await stranger.post(`/public/stay/${token}/verify`, { code: codeFromMail('sophie.online@example.com') })).status, 200);
+
+    const tooMany = await stranger.post(`/public/stay/${token}/check-in`, { ...checkin, companions: [checkin.companions[0], checkin.companions[0]] });
+    assert.equal(tooMany.status, 422);
+    const done = await stranger.post(`/public/stay/${token}/check-in`, checkin);
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    assert.ok(done.body.booking.onlineCheckinAt);
+    assert.equal(done.body.checkin.mainGuest.documentNumber, '*****2345');
+
+    // Reception sees the online check-in, the arrival time and the companion.
+    const fd = await login('frontdesk@demo.test');
+    const id = (await fd.get(`/reservations?propertyId=${propertyId}&q=Online`)).body.items[0].id;
+    const r = (await fd.get(`/reservations/${id}`)).body;
+    assert.ok(r.onlineCheckinAt);
+    assert.equal(r.estimatedArrival, '18:00 – 19:00');
+    assert.equal(r.companions[0].documentNumber, 'ZZ998877');
+    assert.equal(r.guest.documentNumber, '19AB12345');
+    const acc = await login('accounting@demo.test');
+    assert.equal((await acc.get(`/reservations/${id}`)).body.companions[0].documentNumber, '****8877');
+  });
+
+  const ids: Record<string, string> = {};
+
+  test('managers set up extras, packages and promo codes; front desk cannot', async () => {
+    const fd = await login('frontdesk@demo.test');
+    const parking = { propertyId, name: 'Parking', category: 'parking', unit: 'per_night', price: 3000, vatRate: 2100 };
+    assert.equal((await fd.post('/extras', parking)).status, 403);
+    const p = await owner.post('/extras', parking);
+    assert.equal(p.status, 201, JSON.stringify(p.body));
+    ids.parking = p.body.id;
+    const b = await owner.post('/extras', { propertyId, name: 'Breakfast', category: 'food_beverage', unit: 'per_guest_night', price: 4000, vatRate: 1100, bookableOnline: false });
+    ids.breakfast = b.body.id;
+
+    const pkg = await owner.post('/rate-plans', { propertyId, name: 'Bed & Breakfast', code: 'BBPKG', includedExtraIds: [ids.breakfast] });
+    assert.equal(pkg.status, 201, JSON.stringify(pkg.body));
+    assert.deepEqual(pkg.body.includedExtraIds, [ids.breakfast]);
+    ids.package = pkg.body.id;
+    const plans = (await owner.get(`/rate-plans?propertyId=${propertyId}`)).body;
+    assert.deepEqual(plans.find((x: any) => x.id === ids.package).includedExtraIds, [ids.breakfast]);
+
+    assert.equal((await owner.post('/promo-codes', { propertyId, code: 'summer10', discountType: 'percent', value: 10 })).status, 201);
+    assert.equal((await owner.post('/promo-codes', { propertyId, code: 'SUMMER10', discountType: 'percent', value: 5 })).status, 409);
+    assert.equal((await owner.post('/promo-codes', { propertyId, code: 'TOOMUCH', discountType: 'percent', value: 150 })).status, 422);
+    const once = await owner.post('/promo-codes', { propertyId, code: 'ONCE50', discountType: 'fixed', value: 5000, maxUses: 1 });
+    assert.equal(once.body.code, 'ONCE50');
+    assert.equal((await fd.get(`/promo-codes?propertyId=${propertyId}`)).status, 200);
+  });
+
+  test('the booking engine shows the full price upfront, with packages and promo codes', async () => {
+    const guest = await client();
+    const site = (await guest.get('/public/sites/carpati')).body;
+    assert.deepEqual(site.extras.map((e: any) => e.name), ['Parking']);
+
+    const q = `arrival=${arrival}&departure=${departure}&adults=2`;
+    const plain = (await guest.get(`/public/sites/carpati/availability?${q}`)).body;
+    const dbl = plain.roomTypes.find((r: any) => r.name === 'Double Room');
+    const pkg = dbl.offers.find((o: any) => o.ratePlanId === ids.package);
+    // 2 nights at 350.00 plus breakfast for 2 guests × 2 nights at 40.00.
+    assert.equal(pkg.roomTotal, 70000);
+    assert.deepEqual(pkg.included, [{ name: 'Breakfast', amount: 16000, vatRate: 1100 }]);
+    assert.equal(pkg.total, 86000);
+    assert.equal(pkg.nightly.length, 2);
+
+    const promo = (await guest.get(`/public/sites/carpati/availability?${q}&promo=summer10`)).body;
+    assert.equal(promo.promo.valid, true);
+    const bar = promo.roomTypes.find((r: any) => r.name === 'Double Room').offers.find((o: any) => o.ratePlanId === ratePlanId);
+    assert.equal(bar.discount, 7000);
+    assert.equal(bar.total, 63000);
+    assert.equal(bar.totalBeforeDiscount, 70000);
+    const bad = (await guest.get(`/public/sites/carpati/availability?${q}&promo=NOPE1`)).body;
+    assert.deepEqual([bad.promo.valid, bad.promo.reason], [false, 'not_found']);
+
+    const cal = await guest.get(`/public/sites/carpati/calendar?from=${arrival}&to=${departure}`);
+    assert.equal(cal.status, 200, JSON.stringify(cal.body));
+    assert.equal(cal.body.days.length, 2);
+    assert.ok(cal.body.days.every((d: any) => d.from > 0 && d.from <= 35000 && d.minNights === 1 && !d.closed));
+    assert.equal((await guest.get(`/public/sites/carpati/calendar?from=${arrival}&to=${addDays(arrival, 90)}`)).status, 422);
+    // A cheaper rate that needs two nights does not set the one-night "from" price.
+    const longStay = await owner.post('/rate-plans', { propertyId, name: 'Stay longer', code: 'LONG2', adjustmentPercent: -50, minNights: 2 });
+    assert.equal(longStay.status, 201);
+    const cal2 = (await guest.get(`/public/sites/carpati/calendar?from=${arrival}&to=${departure}`)).body;
+    assert.deepEqual(cal2.days.map((d: any) => d.from), cal.body.days.map((d: any) => d.from));
+    await owner.patch(`/rate-plans/${longStay.body.id}`, { active: false });
+  });
+
+  test('a booking with extras and a promo code is priced, limited and posted at check-in', async () => {
+    const guest = await client();
+    const res = await guest.post(
+      '/public/sites/carpati/bookings',
+      bookingBody('extras.guest@example.com', { extraIds: [ids.parking], promoCode: 'summer10', marketingConsent: true }),
+    );
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    // Rooms 700.00 − 10% = 630.00, parking 2 nights × 30.00.
+    assert.equal(res.body.total, 69000);
+    const staff = (await owner.get(`/reservations?propertyId=${propertyId}&q=${res.body.code}`)).body.items[0];
+    const detail = (await owner.get(`/reservations/${staff.id}`)).body;
+    assert.equal(detail.promoCode, 'SUMMER10');
+    assert.equal(detail.discountAmount, 7000);
+    assert.equal(detail.extrasAmount, 6000);
+    assert.deepEqual(detail.extras.map((e: any) => [e.name, e.quantity, e.amount]), [['Parking', 2, 6000]]);
+    const view = (await guest.get(`/public/stay/${res.body.token}`)).body;
+    assert.equal(view.booking.discount, 7000);
+    assert.equal(view.booking.extras[0].name, 'Parking');
+
+    // Package-only extras cannot be added on their own; fixed codes respect their limit.
+    assert.equal((await guest.post('/public/sites/carpati/bookings', bookingBody('x1@example.com', { extraIds: [ids.breakfast] }))).status, 422);
+    assert.equal((await guest.post('/public/sites/carpati/bookings', bookingBody('x2@example.com', { promoCode: 'ONCE50' }))).body.total, 65000);
+    const used = await guest.post('/public/sites/carpati/bookings', bookingBody('x3@example.com', { promoCode: 'ONCE50' }));
+    assert.equal(used.status, 422);
+    assert.equal(used.body.error.details.reason, 'used_up');
+
+    // Extras reach the folio once, when the guest checks in.
+    const today = (await owner.get(`/properties/${propertyId}`)).body.businessDate;
+    const now = await guest.post(
+      '/public/sites/carpati/bookings',
+      bookingBody('checkin.extras@example.com', { arrival: today, departure: addDays(today, 1), extraIds: [ids.parking] }),
+    );
+    assert.equal(now.status, 201, JSON.stringify(now.body));
+    const r = (await owner.get(`/reservations?propertyId=${propertyId}&q=${now.body.code}`)).body.items[0];
+    const room = (await owner.get(`/reservations/${r.id}/free-rooms`)).body[0];
+    assert.equal((await owner.post(`/reservations/${r.id}/check-in`, { roomId: room.id, allowDirtyRoom: true })).status, 200);
+    const folio = (await owner.get(`/reservations/${r.id}`)).body.folio;
+    const parkingLines = folio.filter((f: any) => f.description === 'Parking');
+    assert.equal(parkingLines.length, 1);
+    assert.equal(parkingLines[0].amount, 3000);
+    assert.equal(parkingLines[0].category, 'parking');
+  });
+
+  test('with Stripe, the room is held until payment; a signed webhook confirms it once', async () => {
+    const cfg = await owner.put(`/properties/${propertyId}/online-booking`, {
+      slug: 'carpati',
+      enabled: true,
+      stripePublishableKey: 'pk_test_123',
+      stripeSecretKey: 'sk_test_123',
+      stripeWebhookSecret: WEBHOOK_SECRET,
+    });
+    assert.equal(cfg.body.paymentsEnabled, true);
+    assert.equal(cfg.body.hasSecretKey, true);
+    assert.ok(!JSON.stringify(cfg.body).includes('sk_test_123'));
+
+    const guest = await client();
+    const res = await guest.post('/public/sites/carpati/bookings', bookingBody('paying.guest@example.com', { guest: { firstName: 'Pay', lastName: 'Ing', email: 'paying.guest@example.com' } }));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.status, 'awaiting_payment');
+    assert.equal(res.body.payment.publishableKey, 'pk_test_123');
+    const piId = res.body.payment.clientSecret.split('_secret_')[0];
+    assert.equal(stripe.intents.get(piId)!.amount, 70000);
+    assert.equal(stripe.intents.get(piId)!.metadata.code, res.body.code);
+    const pending = (await owner.get(`/reservations?propertyId=${propertyId}&q=${res.body.code}`)).body.items[0];
+    assert.equal(pending.status, 'tentative');
+    // The paying guest can't check in before paying.
+    const early = await guest.post(`/public/stay/${res.body.token}/check-in`, {
+      mainGuest: { birthDate: '1980-01-01', nationality: 'RO', documentType: 'id_card', documentNumber: 'X1' },
+      confirm: true,
+    });
+    assert.equal(early.status, 409);
+
+    const pi = stripe.succeed(piId);
+    const payload = JSON.stringify({ id: 'evt_1', object: 'event', type: 'payment_intent.succeeded', data: { object: pi } });
+    const { default: Stripe } = await import('stripe');
+    const sign = (secret: string) => new Stripe('sk_test_x').webhooks.generateTestHeaderString({ payload, secret });
+    const hook = (sig: string) =>
+      fetch(`${base}/api/public/stripe/webhook/carpati`, { method: 'POST', headers: { 'content-type': 'application/json', 'stripe-signature': sig }, body: payload });
+    assert.equal((await hook(sign('whsec_wrong'))).status, 400);
+    assert.equal((await hook(sign(WEBHOOK_SECRET))).status, 200);
+    assert.equal((await hook(sign(WEBHOOK_SECRET))).status, 200);
+    // The guest's return to the site is also safe to repeat.
+    assert.equal((await guest.post(`/public/stay/${res.body.token}/confirm-payment`)).body.booking.status, 'confirmed');
+
+    const detail = (await owner.get(`/reservations/${pending.id}`)).body;
+    assert.equal(detail.status, 'confirmed');
+    assert.equal(detail.payments.length, 1);
+    assert.equal(detail.payments[0].amount, 70000);
+    assert.equal(detail.payments[0].reference, piId);
+    assert.equal(linkFromMail('paying.guest@example.com'), res.body.token);
+    // The browser that booked may check in straight away, no code needed.
+    const ok = await guest.post(`/public/stay/${res.body.token}/check-in`, {
+      mainGuest: { birthDate: '1980-01-01', nationality: 'RO', documentType: 'id_card', documentNumber: 'RX123456' },
+      confirm: true,
+    });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  });
+
+  test('an unpaid booking releases its room when the hold expires', async () => {
+    const guest = await client();
+    const res = await guest.post('/public/sites/carpati/bookings', bookingBody('never.pays@example.com', { guest: { firstName: 'Never', lastName: 'Pays', email: 'never.pays@example.com' } }));
+    assert.equal(res.body.status, 'awaiting_payment');
+    await db.superQuery(`update reservations set hold_expires_at = now() - interval '1 minute' where code = $1`, [res.body.code]);
+    await guest.get(`/public/sites/carpati/availability?arrival=${arrival}&departure=${departure}&adults=2`);
+    const r = (await owner.get(`/reservations?propertyId=${propertyId}&q=${res.body.code}`)).body.items[0];
+    assert.equal(r.status, 'cancelled');
+  });
+});
+
+describe('live views: house, day and night shift', () => {
+  let owner: Client;
+  let propertyId: string;
+  before(async () => {
+    owner = await login('owner@demo.test');
+    propertyId = (await owner.get('/properties')).body[0].id;
+  });
+
+  test('arrival estimates become a time on the timeline', async () => {
+    const { arrivalTime } = await import('../src/dashboard/live.service.js');
+    assert.equal(arrivalTime('16:00 – 17:00', '14:00'), '16:00');
+    assert.equal(arrivalTime('After 22:00', '14:00'), '22:00');
+    assert.equal(arrivalTime('around 9.30', '14:00'), '09:30');
+    assert.equal(arrivalTime(null, '14:00'), '14:00');
+  });
+
+  test('the house shows every room on a floor, with a state the desk can act on', async () => {
+    const res = await owner.get(`/dashboard/house?propertyId=${propertyId}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const rooms = (await owner.get(`/rooms?propertyId=${propertyId}`)).body.filter((r: any) => r.active);
+    assert.equal(res.body.rooms.length, rooms.length);
+    assert.ok(res.body.rooms.every((r: any) => ['in_house', 'ready', 'dirty', 'free', 'out'].includes(r.state) && r.floor));
+    assert.equal(res.body.counts.occupied, res.body.rooms.filter((r: any) => r.state === 'in_house').length);
+    // Every in-house room names its guest for front desk staff.
+    assert.ok(res.body.rooms.filter((r: any) => r.stay).every((r: any) => typeof r.stay.guestName === 'string'));
+    for (const s of res.body.suggestions) assert.ok(rooms.some((r: any) => r.id === s.roomId));
+  });
+
+  test('without reservations.read the house hides who is staying', async () => {
+    const hk = await login('housekeeper@demo.test');
+    const res = await hk.get(`/dashboard/house?propertyId=${propertyId}`);
+    if (res.status === 403) return; // roles without property.read never see the house
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.arrivals, []);
+    assert.ok(res.body.rooms.every((r: any) => !r.stay || r.stay.guestName === null));
+  });
+
+  test('the day timeline is sorted and always ends with the night audit', async () => {
+    const res = await owner.get(`/dashboard/day?propertyId=${propertyId}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const times = res.body.items.map((i: any) => i.time);
+    assert.deepEqual(times, [...times].sort());
+    assert.ok(res.body.items.some((i: any) => i.lane === 'money' && i.title === 'night_audit'));
+    assert.ok(res.body.items.every((i: any) => /^\d{2}:\d{2}$/.test(i.time)));
+    assert.equal((await owner.get(`/dashboard/day?propertyId=${propertyId}&date=yesterday`)).status, 422);
+  });
+
+  test('the night shift lists the checks before the audit and who owes money', async () => {
+    const res = await owner.get(`/dashboard/night?propertyId=${propertyId}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.checks.map((c: any) => c.key), ['departures', 'arrivals', 'housekeeping', 'balances']);
+    assert.equal(res.body.ready, res.body.checks.every((c: any) => c.done));
+    assert.ok(res.body.owes.every((o: any) => o.balance > 0));
+    assert.ok(res.body.tonight.occupied <= res.body.tonight.sellable);
+  });
+});
