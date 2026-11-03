@@ -1,33 +1,63 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["image", "existingSecret", "appUser", "persistence"],
+  "additionalProperties": false,
+  "required": [
+    "clusterName",
+    "databaseName",
+    "roles"
+  ],
   "properties": {
-    "image": {
-      "type": "object",
-      "required": ["repository", "digest"],
-      "additionalProperties": false,
-      "properties": {
-        "repository": {"type": "string", "minLength": 1},
-        "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
-        "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
-      }
+    "clusterName": {
+      "type": "string",
+      "minLength": 1
     },
-    "existingSecret": {"type": "string", "minLength": 1},
-    "appUser": {"type": "string", "pattern": "^[a-z_][a-z0-9_]{0,62}$"},
-    "persistence": {
+    "databaseName": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_]{0,62}$"
+    },
+    "roles": {
       "type": "object",
-      "required": ["size", "storageClass", "local"],
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "app"
+      ],
       "properties": {
-        "size": {"type": "string"},
-        "storageClass": {"type": "string", "minLength": 1},
-        "local": {
+        "owner": {
           "type": "object",
-          "required": ["enabled"],
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "existingSecret"
+          ],
           "properties": {
-            "enabled": {"type": "boolean"},
-            "node": {"type": "string"},
-            "path": {"type": "string"}
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z_][a-z0-9_]{0,62}$"
+            },
+            "existingSecret": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "app": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "existingSecret"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z_][a-z0-9_]{0,62}$"
+            },
+            "existingSecret": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       }

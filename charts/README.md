@@ -1,17 +1,20 @@
-# era. charts
+# ERA Helm charts
 
-Three independent Helm charts, published as OCI charts to `oci://harbor.cloud.retreat480.com/era` and deployed
-by Argo CD (see [docs/ci.md](../docs/ci.md)).
+Three independent charts are published to `oci://harbor.cloud.retreat480.com/era`:
 
-| Chart | Contents | Needs |
-| --- | --- | --- |
-| `era-db` | PostgreSQL 17 (pinned digest) on a retained local volume; creates the least-privileged `pms_app` role on first start | Secret `era-db-credentials`, folder on the node |
-| `era-api` | NestJS API; `migrate` init container (owner role) before start; PostSync seed job; Mailpit test inbox | Secret `era-api-credentials`, pull secret `harbor-era-pull` |
-| `era-web` | Next.js web app; HTTPRoutes on `traefik-gateway` (`/api` → era-api, `/` → era-web, Mailpit host); Traefik basic-auth Middleware | Secret `era-staging-basic-auth`, pull secret |
+- `era-db`: database and restricted owner/runtime roles on the existing
+  CloudNativePG `postgres-geo` cluster. Deploy in namespace `postgres`; password
+  Secrets are `era-staging-owner` and `era-staging-app`. No database server or
+  volume is installed.
+- `era-api`: API, serialized migration init container, idempotent seed Job and
+  internal Mailpit. Requires `era-api-credentials` and `harbor-era-pull`.
+- `era-web`: Next.js application and Gateway HTTPRoute for the website and API.
+  Booking pages and webhooks have no HTTP basic-auth barrier. Mailpit's public
+  route is disabled by default.
 
-Every application chart requires `image.repository` and an `image.digest` (`sha256:…`); there is no tag fallback.
-The zero digests in the source charts are placeholders: CI publishes copies with each build's real digest
-(`scripts/package-chart.py`). Schemas reject a missing or malformed digest.
+API/web charts require image index SHA-256 digests, with no tag fallback. CI
+packages copies with the exact build digest; zero source digests are lint-only
+placeholders. Containers run without root/capabilities; API/web use read-only
+root filesystems. Run `helm lint charts/era-db charts/era-api charts/era-web`.
 
-All containers run as non-root with dropped capabilities; the API and web app have read-only root filesystems.
-Check locally with `helm lint charts/era-db charts/era-api charts/era-web`.
+See [deployment instructions](../docs/ci.md) for credentials, promotion and rollback.

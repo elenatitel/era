@@ -19,7 +19,7 @@ route:
 
 # Mailpit inbox (service released by the era-api chart).
 mail:
-  enabled: true
+  enabled: false
   hostname: era-staging-mail.cloud.retreat480.com
   service: era-api-mailpit
   port: 8025
@@ -29,7 +29,7 @@ mail:
 #   htpasswd -nb tester 'a-long-password' > users
 #   kubectl -n era-staging create secret generic era-staging-basic-auth --from-file=users
 auth:
-  enabled: true
+  enabled: false
   existingSecret: era-staging-basic-auth
 
 resources:

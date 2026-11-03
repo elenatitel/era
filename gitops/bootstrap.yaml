@@ -12,20 +12,24 @@ spec:
   destinations:
     - server: https://kubernetes.default.svc
       namespace: era-staging
-  clusterResourceWhitelist:
-    - group: ""
-      kind: PersistentVolume
+    - server: https://kubernetes.default.svc
+      namespace: postgres
+  clusterResourceWhitelist: []
   namespaceResourceWhitelist:
+    - group: postgresql.cnpg.io
+      kind: Database
+    - group: postgresql.cnpg.io
+      kind: DatabaseRole
+    - group: rbac.authorization.k8s.io
+      kind: Role
+    - group: rbac.authorization.k8s.io
+      kind: RoleBinding
     - group: ""
       kind: Service
     - group: ""
       kind: ConfigMap
-    - group: ""
-      kind: PersistentVolumeClaim
     - group: apps
       kind: Deployment
-    - group: apps
-      kind: StatefulSet
     - group: batch
       kind: Job
     - group: gateway.networking.k8s.io
@@ -41,9 +45,9 @@ metadata:
 spec:
   project: default
   source:
-    # Private repository: Argo CD needs a read-only credential for it (see docs/ci.md).
+    # Public repository; deployment follows the reviewed staging branch.
     repoURL: https://github.com/elenatitel/era.git
-    targetRevision: main
+    targetRevision: deploy/cnpg-staging
     path: gitops/staging
   destination:
     server: https://kubernetes.default.svc

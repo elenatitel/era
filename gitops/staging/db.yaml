@@ -10,12 +10,12 @@ spec:
   source:
     repoURL: harbor.cloud.retreat480.com/era
     chart: era-db
-    targetRevision: 0.1.0-ci.1.1
+    targetRevision: 0.1.0-ci.2.1
     helm:
       releaseName: era-db
   destination:
     server: https://kubernetes.default.svc
-    namespace: era-staging
+    namespace: postgres
   syncPolicy:
     automated:
       prune: false

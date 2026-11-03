@@ -7,8 +7,8 @@
 
 ARG NODE_IMAGE=node:22-bookworm-slim
 
-# ---------------------------------------------------------------- build everything once
-FROM ${NODE_IMAGE} AS build
+# ---------------------------------------------------------------- shared build dependencies
+FROM ${NODE_IMAGE} AS build-base
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY package.json package-lock.json ./
@@ -22,7 +22,13 @@ COPY apps/web apps/web
 # Baked into the web bundle at build time.
 ARG NEXT_PUBLIC_APP_NAME=era.
 ENV NEXT_PUBLIC_APP_NAME=$NEXT_PUBLIC_APP_NAME
-RUN npm run build -w @pms/shared && npm run build -w @pms/api && npm run build -w @pms/web
+RUN npm run build -w @pms/shared
+
+FROM build-base AS api-build
+RUN npm run build -w @pms/api
+
+FROM build-base AS web-build
+RUN npm run build -w @pms/web
 
 # ---------------------------------------------------------------- api: production dependencies only
 FROM ${NODE_IMAGE} AS api-deps
@@ -37,11 +43,11 @@ FROM ${NODE_IMAGE} AS api
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=api-deps --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/packages/shared/package.json ./packages/shared/package.json
-COPY --from=build --chown=node:node /app/packages/shared/dist ./packages/shared/dist
-COPY --from=build --chown=node:node /app/apps/api/package.json ./apps/api/package.json
-COPY --from=build --chown=node:node /app/apps/api/dist ./apps/api/dist
-COPY --from=build --chown=node:node /app/apps/api/drizzle ./apps/api/drizzle
+COPY --from=api-build --chown=node:node /app/packages/shared/package.json ./packages/shared/package.json
+COPY --from=api-build --chown=node:node /app/packages/shared/dist ./packages/shared/dist
+COPY --from=api-build --chown=node:node /app/apps/api/package.json ./apps/api/package.json
+COPY --from=api-build --chown=node:node /app/apps/api/dist ./apps/api/dist
+COPY --from=api-build --chown=node:node /app/apps/api/drizzle ./apps/api/drizzle
 USER node
 WORKDIR /app/apps/api
 EXPOSE 4000
@@ -52,9 +58,9 @@ CMD ["node", "dist/main.js"]
 FROM ${NODE_IMAGE} AS web
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 WORKDIR /app
-COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
-COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=build --chown=node:node /app/apps/web/public ./apps/web/public
+COPY --from=web-build --chown=node:node /app/apps/web/.next/standalone ./
+COPY --from=web-build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=web-build --chown=node:node /app/apps/web/public ./apps/web/public
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

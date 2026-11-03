@@ -17,6 +17,7 @@ root = Path(__file__).resolve().parents[1] / 'gitops/staging'
 root.mkdir(parents=True, exist_ok=True)
 # Sync waves: the database first, then the API (runs migrations), then the web app and routes.
 for component, wave in [('db', 0), ('api', 10), ('web', 20)]:
+    namespace = 'postgres' if component == 'db' else 'era-staging'
     text = f'''apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -34,7 +35,7 @@ spec:
       releaseName: era-{component}
   destination:
     server: https://kubernetes.default.svc
-    namespace: era-staging
+    namespace: {namespace}
   syncPolicy:
     automated:
       prune: false
