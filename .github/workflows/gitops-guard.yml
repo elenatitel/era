@@ -1,0 +1,27 @@
+name: GitOps PR guard
+
+# Trusted base-branch code only; do not check out or execute PR code here.
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  guard:
+    name: Protect staging manifests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out trusted guard from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Check feature changes against the PR merge-base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/staging_delivery.py guard

@@ -12,3 +12,7 @@ coverage/
 .DS_Store
 .pg-test/
 .pg-dev/
+
+# Python delivery tooling
+__pycache__/
+*.py[cod]

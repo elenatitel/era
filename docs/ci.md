@@ -1,27 +1,15 @@
 # Images, charts and staging delivery
 
-Staging is https://era-staging.cloud.retreat480.com. The deployment branch is
-`main`: it is the only environment for now (no separate production yet). Work happens on
-feature branches merged into `main` through pull requests. The same pipeline also supports
-version tags.
+Staging: https://era-staging.cloud.retreat480.com.
 
-## Delivery
+Argo CD watches **main**, directory `gitops/staging`. Pushes to development
+branches run tests and publish images/charts; successful complete builds are
+automatically promoted to main using GitHub Actions' built-in token. Images use
+`ci-RUN_NUMBER.RUN_ATTEMPT` tags, while Helm chart versions are
+`0.1.0-ci.RUN_NUMBER.RUN_ATTEMPT` and lock exact image digests.
 
-1. Push application, dependency, chart or workflow changes. GitHub Actions runs
-   type checking, unit/API integration tests, a production build and the high
-   severity production dependency audit before publishing anything.
-2. CI publishes `linux/amd64` and `linux/arm64` API/web images in the private
-   Harbor project `era`. The three OCI charts use one explicit version,
-   `0.1.0-ci.<run-number>.<attempt>`. API/web defaults lock the image index digest.
-3. Run `python3 scripts/promote-staging.py <chart-version>`, review the diff, then
-   commit and push `gitops/staging`. Argo CD deploys those exact versions.
-   A GitOps-only promotion does not rebuild images.
-4. Argo CD reconciles database roles/database first, then API migrations and
-   seed, then web routing. Reverting a promotion restores older application
-   images; SQL migrations are forward-only, so check schema compatibility.
-
-PR builds validate and build but never publish or receive Harbor credentials.
-Re-run all publishing jobs together so all charts share a release version.
+See [the shared delivery policy](staging-delivery.md) for feature/PR behavior,
+ordering, branch protection, reruns and intentional GitOps changes.
 
 ## Registry credentials
 

@@ -1,0 +1,45 @@
+name: Promote staging from successful feature build
+
+on:
+  workflow_run:
+    workflows: [Build and publish images and digest-locked charts]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful feature build run ID (not a chart version)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_branch != 'main' &&
+       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+      checks: write
+    steps:
+      - name: Check out trusted deployment logic from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: true
+      - name: Promote the completed build to main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id || github.event.workflow_run.id }}
+        run: python3 scripts/staging_delivery.py promote --run-id "$BUILD_RUN_ID"

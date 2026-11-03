@@ -49,6 +49,8 @@ spec:
     repoURL: https://github.com/elenatitel/era.git
     targetRevision: main
     path: gitops/staging
+    directory:
+      exclude: .release.json
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

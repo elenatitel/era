@@ -2,7 +2,7 @@ name: Build and publish images and digest-locked charts
 
 on:
   pull_request:
-    branches: [main, feature/booking-engine-phase1]
+    branches: [main]
     paths:
       - 'apps/**'
       - 'packages/**'
@@ -10,11 +10,11 @@ on:
       - 'Dockerfile'
       - 'package.json'
       - 'package-lock.json'
-      - 'scripts/package-chart.py'
+      - 'scripts/**'
       - '.github/workflows/images.yml'
       - '.github/workflows/ci.yml'
   push:
-    branches: [main, feature/booking-engine-phase1]
+    branches: ['**', '!main', '!gitops/**']
     paths:
       - 'apps/**'
       - 'packages/**'
@@ -22,10 +22,9 @@ on:
       - 'Dockerfile'
       - 'package.json'
       - 'package-lock.json'
-      - 'scripts/package-chart.py'
+      - 'scripts/**'
       - '.github/workflows/images.yml'
       - '.github/workflows/ci.yml'
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -41,6 +40,7 @@ env:
 
 jobs:
   validate:
+    if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
     uses: ./.github/workflows/ci.yml
 
   images:
@@ -85,14 +85,7 @@ jobs:
             echo 'tags<<EOF'
             echo "$image:sha-$GITHUB_SHA"
             echo "$image:build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-            if [[ "$GITHUB_REF" == 'refs/heads/main' || "$GITHUB_REF" == 'refs/heads/feature/booking-engine-phase1' ]]; then
-              echo "$image:staging"
-            elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
-              # Only Docker-compatible version tags are accepted.
-              tag="${GITHUB_REF#refs/tags/}"
-              [[ "$tag" =~ ^v[0-9][A-Za-z0-9_.-]{0,126}$ ]]
-              echo "$image:$tag"
-            fi
+            echo "$image:ci-$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 

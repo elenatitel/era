@@ -1,0 +1,13 @@
+{
+  "project": "era",
+  "components": [
+    "db",
+    "api",
+    "web"
+  ],
+  "publish_jobs": [
+    "Build api",
+    "Build web",
+    "Publish CloudNativePG database chart"
+  ]
+}
