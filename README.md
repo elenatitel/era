@@ -148,11 +148,11 @@ docker build --target web -t era-web .
 
 The `api` image also runs migrations (`node dist/db/migrate.js`), which is what the `migrate` service in `docker-compose.prod.yml` does.
 
-**Kubernetes (staging):** three digest-locked Helm charts in [charts/](charts/README.md) (`era-db`, `era-api`, `era-web`) are published with the images to Harbor by `.github/workflows/images.yml` and deployed by Argo CD from `gitops/staging`. Setup and promotion: [docs/ci.md](docs/ci.md).
+**Kubernetes (staging):** https://era-staging.cloud.retreat480.com uses the existing HA CloudNativePG cluster (`postgres-geo`) with a dedicated database and restricted owner/runtime roles. Three Helm charts in [charts/](charts/README.md) (`era-db`, `era-api`, `era-web`) are published with the images to Harbor by `.github/workflows/images.yml` and deployed by Argo CD from `gitops/staging`. Setup and promotion: [docs/ci.md](docs/ci.md).
 
 **Online booking with Stripe:** each hotel uses its own Stripe account. In **Settings → Online booking**, set the web address, paste the publishable and secret keys, add the shown webhook endpoint in Stripe (event `payment_intent.succeeded`) and paste its signing secret. Without keys, online bookings are confirmed at once and paid at the hotel.
 
-**Operations checklist:** schedule `pg_dump` backups of the `pgdata` volume off-site and test restores;
+**Operations checklist:** for Docker deployments, schedule `pg_dump` backups of the `pgdata` volume off-site and test restores; Kubernetes uses the shared CNPG cluster’s backup and replication policy;
 keep `ENCRYPTION_KEY` in a secret manager (losing it makes encrypted ID numbers and 2FA secrets unreadable);
 the API rate limiter is in-memory, so run one API replica or put a Redis-backed limiter in front before scaling out;
 point uptime monitoring at `/api/health`.

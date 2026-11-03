@@ -15,6 +15,8 @@ export async function runMigrations(
   const client = new pg.Client({ connectionString: ownerUrl, ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: true } : undefined });
   await client.connect();
   try {
+    // Serialize deployment migrations on the same database. Session close releases the lock.
+    await client.query("select pg_advisory_lock(hashtext(current_database()), hashtext('era:migrate'))");
     await migrate(drizzle({ client }), { migrationsFolder });
     const appRole = appUrl ? decodeURIComponent(new URL(appUrl).username) : undefined;
     const { rows } = await client.query<{ current_user: string }>('select current_user');

@@ -2,7 +2,7 @@ name: Build and publish images and digest-locked charts
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/booking-engine-phase1, deploy/cnpg-staging]
     paths:
       - 'apps/**'
       - 'packages/**'
@@ -12,8 +12,9 @@ on:
       - 'package-lock.json'
       - 'scripts/package-chart.py'
       - '.github/workflows/images.yml'
+      - '.github/workflows/ci.yml'
   push:
-    branches: [main]
+    branches: [main, feature/booking-engine-phase1, deploy/cnpg-staging]
     paths:
       - 'apps/**'
       - 'packages/**'
@@ -23,6 +24,7 @@ on:
       - 'package-lock.json'
       - 'scripts/package-chart.py'
       - '.github/workflows/images.yml'
+      - '.github/workflows/ci.yml'
     tags: ['v*']
   workflow_dispatch:
 
@@ -38,7 +40,11 @@ env:
   PROJECT: era
 
 jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+
   images:
+    needs: validate
     name: Build ${{ matrix.component }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -79,7 +85,7 @@ jobs:
             echo 'tags<<EOF'
             echo "$image:sha-$GITHUB_SHA"
             echo "$image:build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-            if [[ "$GITHUB_REF" == 'refs/heads/main' ]]; then
+            if [[ "$GITHUB_REF" == 'refs/heads/main' || "$GITHUB_REF" == 'refs/heads/deploy/cnpg-staging' ]]; then
               echo "$image:staging"
             elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
               # Only Docker-compatible version tags are accepted.
@@ -151,7 +157,8 @@ jobs:
             "$COMPONENT" "$version" "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
 
   database-chart:
-    name: Publish pinned database chart
+    needs: validate
+    name: Publish CloudNativePG database chart
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -180,5 +187,5 @@ jobs:
           printf '%s' "$HARBOR_PASSWORD" | helm registry login "$REGISTRY" \
             --username "$HARBOR_USERNAME" --password-stdin
           helm push "dist/charts/era-db-$version.tgz" "oci://$REGISTRY/$PROJECT"
-          printf '\nChart: `era-db` version `%s` (PostgreSQL digest pinned in Git)\n' \
+          printf '\nChart: `era-db` version `%s` (database and restricted roles on the existing CNPG cluster)\n' \
             "$version" >> "$GITHUB_STEP_SUMMARY"

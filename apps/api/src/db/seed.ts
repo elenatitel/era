@@ -175,7 +175,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const password = process.env.DEMO_PASSWORD ?? `Demo-${randomBytes(6).toString('base64url')}`;
       const result = await seedDemo(db, password);
       if (result.skipped) console.log('Demo organization already exists');
-      else console.log(`Demo organization created. Users: ${result.users.join(', ')}\nPassword for all demo users: ${password}`);
+      else {
+        console.log(`Demo organization created. Users: ${result.users.join(', ')}`);
+        if (!c.isProduction && !process.env.DEMO_PASSWORD) console.log(`Password for all demo users: ${password}`);
+      }
     }
   } finally {
     await db.onModuleDestroy();

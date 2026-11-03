@@ -10,14 +10,14 @@ replicas: 1
 
 # Secret created in the namespace, never in Git. Keys:
 #   JWT_SECRET (openssl rand -hex 32), ENCRYPTION_KEY (openssl rand -base64 32, keep a copy: unrecoverable),
-#   DATABASE_URL (postgres://pms_app:<APP_DB_PASSWORD>@era-db:5432/pms),
-#   DATABASE_MIGRATION_URL (postgres://<POSTGRES_USER>:<POSTGRES_PASSWORD>@era-db:5432/pms),
+#   DATABASE_URL (postgres://era_staging_app:<password>@postgres-geo-rw.postgres.svc.cluster.local:5432/era_staging),
+#   DATABASE_MIGRATION_URL (postgres://era_staging_owner:<password>@postgres-geo-rw.postgres.svc.cluster.local:5432/era_staging),
 #   optional: SMTP_PASSWORD, PLATFORM_ADMIN_PASSWORD, DEMO_PASSWORD
 existingSecret: era-api-credentials
 
 # Used only to wait for PostgreSQL before migrating.
 database:
-  host: era-db
+  host: postgres-geo-rw.postgres.svc.cluster.local
   port: 5432
   ssl: false
 
@@ -29,7 +29,7 @@ app:
   logLevel: debug
   bookingHoldMinutes: 30
   mailFrom: "era. staging <no-reply@era-staging.cloud.retreat480.com>"
-  platformAdminEmail: ""
+  platformAdminEmail: admin@era-staging.cloud.retreat480.com
   # Real SMTP (ignored while mailpit.enabled).
   smtp:
     host: ""
