@@ -45,9 +45,9 @@ metadata:
 spec:
   project: default
   source:
-    # Public repository. Staging follows the feature branch until PR #1 is merged; then switch to main.
+    # Public repository. Staging (the only environment for now) follows main.
     repoURL: https://github.com/elenatitel/era.git
-    targetRevision: feature/booking-engine-phase1
+    targetRevision: main
     path: gitops/staging
   destination:
     server: https://kubernetes.default.svc

@@ -1,9 +1,9 @@
 # Images, charts and staging delivery
 
 Staging is https://era-staging.cloud.retreat480.com. The deployment branch is
-`feature/booking-engine-phase1` until PR #1 is merged; then switch the root Application
-(`gitops/bootstrap.yaml`) and the `staging` image tag to `main`. The same pipeline
-also supports version tags.
+`main`: it is the only environment for now (no separate production yet). Work happens on
+feature branches merged into `main` through pull requests. The same pipeline also supports
+version tags.
 
 ## Delivery
 
