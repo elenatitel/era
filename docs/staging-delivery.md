@@ -79,3 +79,5 @@ gh api --method PUT repos/OWNER/REPOSITORY/branches/main/protection \
 
 This requires repository administrator access, not just collaborator write access.
 It leaves GitOps-only bot commits possible without an approval/bypass token.
+
+Delivery is verified from a feature branch before its documentation PR is merged.
