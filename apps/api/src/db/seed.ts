@@ -2,6 +2,7 @@
  * Seeding:
  *   npm run db:seed                 -> ensures the platform admin from PLATFORM_ADMIN_EMAIL/PASSWORD exists
  *   npm run db:seed -- --demo       -> also creates a demo organization (refused in production)
+ *                                      and fills it once with mock operating history (mock-data.ts)
  */
 import { randomBytes } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
@@ -13,6 +14,7 @@ import { seedTenantRoles } from '../platform/platform.module.js';
 import { quote } from '../properties/pricing.js';
 import { encrypt } from '../common/crypto.js';
 import { DbService } from './db.service.js';
+import { seedMockData } from './mock-data.js';
 import {
   documentSeries,
   guests,
@@ -179,6 +181,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         console.log(`Demo organization created. Users: ${result.users.join(', ')}`);
         if (!c.isProduction && !process.env.DEMO_PASSWORD) console.log(`Password for all demo users: ${password}`);
       }
+      const mock = await seedMockData(db);
+      if (mock.skipped) console.log(`Mock data skipped: ${mock.reason}`);
+      else console.log(`Mock data added for business date ${mock.businessDate}: ${mock.reservations} reservations, ${mock.guests} guests, ${mock.invoices} invoices, ${mock.payments} payments`);
     }
   } finally {
     await db.onModuleDestroy();
