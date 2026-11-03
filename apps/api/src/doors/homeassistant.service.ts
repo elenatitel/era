@@ -29,7 +29,8 @@ export const haUrlSchema = z
     );
   }, 'Use an HTTPS hostname without a path, credentials or custom port');
 
-const blocked = new BlockList();
+const blockedV4 = new BlockList();
+const blockedV6 = new BlockList();
 for (const [address, prefix] of [
   ['0.0.0.0', 8],
   ['10.0.0.0', 8],
@@ -45,7 +46,7 @@ for (const [address, prefix] of [
   ['203.0.113.0', 24],
   ['224.0.0.0', 3],
 ] as const)
-  blocked.addSubnet(address, prefix, 'ipv4');
+  blockedV4.addSubnet(address, prefix, 'ipv4');
 for (const [address, prefix] of [
   ['::', 96],
   ['::ffff:0:0', 96],
@@ -57,7 +58,14 @@ for (const [address, prefix] of [
   ['ff00::', 8],
   ['2001:db8::', 32],
 ] as const)
-  blocked.addSubnet(address, prefix, 'ipv6');
+  blockedV6.addSubnet(address, prefix, 'ipv6');
+
+/** Separate lists: Node matches IPv4 against IPv4-mapped IPv6 subnet rules too. */
+export function isPublicHomeAssistantAddress(address: string, family: number): boolean {
+  return family === 4
+    ? isIP(address) === 4 && !blockedV4.check(address, 'ipv4')
+    : family === 6 && isIP(address) === 6 && !blockedV6.check(address, 'ipv6');
+}
 
 @Injectable()
 export class HomeAssistantService {
@@ -75,7 +83,7 @@ export class HomeAssistantService {
     ])
       .catch(() => [])
       .finally(() => clearTimeout(dnsTimer));
-    if (!addresses.length || addresses.some((a) => blocked.check(a.address, a.family === 6 ? 'ipv6' : 'ipv4')))
+    if (!addresses.length || addresses.some((a) => !isPublicHomeAssistantAddress(a.address, a.family)))
       throw new ServiceUnavailableException('Home Assistant must resolve to a public HTTPS address');
     const target = addresses[0]!;
     const service = entityId?.startsWith('lock.') ? 'lock/unlock' : entityId ? `script/${entityId.slice(7)}` : '';
