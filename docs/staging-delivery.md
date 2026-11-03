@@ -70,14 +70,22 @@ preserves all other configuration). Database migrations remain forward-only;
 verify schema compatibility. Normal automatic delivery resumes with the next
 newer feature build.
 
-Repository administrators can install the required-check policy with:
+Main is protected by the repository ruleset `Protect main GitOps`
+(`.github/main-ruleset.json`): the `Protect staging manifests` check from GitHub
+Actions is required, the branch need not be up to date, no pull request is
+required, force pushes and deletion are blocked, and the bypass list is empty.
+Repository administrators can install it with:
 
 ```sh
-gh api --method PUT repos/OWNER/REPOSITORY/branches/main/protection \
-  --input .github/main-protection.json
+gh api --method POST repos/OWNER/REPOSITORY/rulesets \
+  --input .github/main-ruleset.json
 ```
 
-This requires repository administrator access, not just collaborator write access.
+To change it later, find its ID with `gh api repos/OWNER/REPOSITORY/rulesets` and
+use `--method PUT repos/OWNER/REPOSITORY/rulesets/ID` with the same file. This
+requires repository administrator access, not just collaborator write access.
 It leaves GitOps-only bot commits possible without an approval/bypass token.
+Commits pushed directly to main by people are rejected because they lack the
+check; merge changes through pull requests.
 
 Delivery is verified from a feature branch before its documentation PR is merged.
