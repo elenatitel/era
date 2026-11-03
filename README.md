@@ -173,3 +173,6 @@ docker/       Caddyfile, Postgres init script
 See [SECURITY.md](SECURITY.md) for the security model.
 
 Staff SSO and authorization: [Keycloak integration](docs/keycloak.md).
+
+Guest QR/PIN door access and per-property Home Assistant setup:
+[Door access guide](docs/door-access.md).

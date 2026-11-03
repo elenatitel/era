@@ -164,3 +164,10 @@ body {
 svg.lucide {
   stroke-width: 1.75;
 }
+
+/* Native range control: a full drag, or keyboard arrows then Enter, unlocks. */
+.door-slider { appearance:none; -webkit-appearance:none; background:transparent; border:0; margin:0; padding:4px; }
+.door-slider::-webkit-slider-thumb { appearance:none; -webkit-appearance:none; width:56px; height:56px; border-radius:50%; background:var(--sun); border:2px solid var(--brand); cursor:grab; }
+.door-slider::-moz-range-thumb { width:52px; height:52px; border-radius:50%; background:var(--sun); border:2px solid var(--brand); cursor:grab; }
+.door-slider:focus-visible { outline:2px solid var(--focus); outline-offset:4px; border-radius:999px; }
+.door-slider:disabled { opacity:.5; }
