@@ -22,6 +22,7 @@ data:
   SMTP_SECURE: {{ .Values.app.smtp.secure | quote }}
   SMTP_USER: {{ .Values.app.smtp.user | quote }}
   {{- end }}
+  PLATFORM_ADMIN_REQUIRE_MFA: {{ .Values.app.platformAdminRequireMfa | toString | quote }}
   {{- with .Values.app.platformAdminEmail }}
   PLATFORM_ADMIN_EMAIL: {{ . | quote }}
   {{- end }}

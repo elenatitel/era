@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import type { Request } from 'express';
 import { ERROR_CODES, type Permission } from '@pms/shared';
 import { ctx } from '../common/context.js';
+import { config } from '../config.js';
 import { DbService } from '../db/db.service.js';
 import { sessions, users } from '../db/schema.js';
 import { AuthService } from './auth.service.js';
@@ -78,7 +79,7 @@ export class AuthGuard implements CanActivate {
 
     if (this.meta<boolean>(PLATFORM_ADMIN_KEY, context)) {
       if (!row.isPlatformAdmin) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Platform administrators only' });
-      if (!row.mfaEnabled) {
+      if (!row.mfaEnabled && config().PLATFORM_ADMIN_REQUIRE_MFA) {
         throw new ForbiddenException({
           code: ERROR_CODES.MFA_SETUP_REQUIRED,
           message: 'Platform administrators must enable two-factor authentication',
