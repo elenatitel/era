@@ -30,6 +30,8 @@ app:
   bookingHoldMinutes: 30
   mailFrom: "era. staging <no-reply@era-staging.cloud.retreat480.com>"
   platformAdminEmail: admin@era-staging.cloud.retreat480.com
+  # Temporarily off on staging; set back to true before real data or production.
+  platformAdminRequireMfa: false
   # Real SMTP (ignored while mailpit.enabled).
   smtp:
     host: ""

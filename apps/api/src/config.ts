@@ -33,6 +33,8 @@ const schema = z.object({
   MAIL_FROM: z.string().default('era. <no-reply@localhost>'),
   PLATFORM_ADMIN_EMAIL: z.string().optional(),
   PLATFORM_ADMIN_PASSWORD: z.string().optional(),
+  /** Platform administrators must enable 2FA before using the platform. Disable only on test environments. */
+  PLATFORM_ADMIN_REQUIRE_MFA: bool.default(true),
   /** Minutes an unpaid online booking holds its room. */
   BOOKING_HOLD_MINUTES: z.coerce.number().int().min(5).max(120).default(30),
   /** Testing only: send Stripe API calls to a local fake (e.g. http://127.0.0.1:12111). Ignored in production. */
