@@ -171,3 +171,5 @@ docker/       Caddyfile, Postgres init script
 ```
 
 See [SECURITY.md](SECURITY.md) for the security model.
+
+Staff SSO and authorization: [Keycloak integration](docs/keycloak.md).

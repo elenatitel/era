@@ -13,7 +13,7 @@ export default function InvitePage() {
   const { token } = useParams<{ token: string }>();
   const info = useQuery({
     queryKey: ['invite', token],
-    queryFn: () => api.get<{ email: string; organization: string; accountExists: boolean }>(`/auth/invitations/${token}`),
+    queryFn: () => api.get<{ email: string; organization: string; accountExists: boolean; authProvider:"local"|"keycloak" }>(`/auth/invitations/${token}`),
     retry: false,
   });
   const [name, setName] = useState('');
@@ -39,6 +39,7 @@ export default function InvitePage() {
   if (info.isLoading) return <Spinner />;
   if (info.error) return <ErrorText error={info.error} />;
   const d = info.data!;
+  if(d.authProvider==='keycloak') return <div className="space-y-5"><h1 className="font-display text-3xl">{t('auth.inviteTitle',{org:d.organization})}</h1><p>{t('auth.inviteHint',{email:d.email})}</p><p className="text-sm text-muted">{t('auth.ssoManaged')}</p><Button onClick={()=>window.location.assign('/api/auth/oidc/login?invite='+encodeURIComponent(token))}>{t('auth.acceptInvite')}</Button></div>;
   return (
     <form onSubmit={submit} className="space-y-5">
       <div>

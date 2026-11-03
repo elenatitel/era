@@ -7,6 +7,7 @@ import { ctx } from '../common/context.js';
 import { config } from '../config.js';
 import { DbService } from '../db/db.service.js';
 import { sessions, users } from '../db/schema.js';
+import { KeycloakService } from './keycloak.service.js';
 import { AuthService } from './auth.service.js';
 import { IS_PUBLIC, PERMISSIONS_KEY, PLATFORM_ADMIN_KEY, TENANT_KEY } from './decorators.js';
 import { ACCESS_COOKIE, TokensService } from './tokens.service.js';
@@ -23,6 +24,7 @@ export class AuthGuard implements CanActivate {
     private readonly tokens: TokensService,
     private readonly auth: AuthService,
     private readonly db: DbService,
+    private readonly keycloak: KeycloakService,
   ) {}
 
   private meta<T>(key: string, context: ExecutionContext): T | undefined {
@@ -45,6 +47,8 @@ export class AuthGuard implements CanActivate {
     const [row] = await this.db.db
       .select({
         revokedAt: sessions.revokedAt,
+        familyId: sessions.familyId,
+        authProvider: sessions.authProvider,
         expiresAt: sessions.expiresAt,
         userId: users.id,
         isPlatformAdmin: users.isPlatformAdmin,
@@ -53,19 +57,20 @@ export class AuthGuard implements CanActivate {
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))
       .where(eq(sessions.id, claims.sid));
-    if (!row || row.revokedAt || row.expiresAt < new Date() || row.userId !== claims.sub) {
+    if (!row || row.authProvider !== config().AUTH_PROVIDER || row.revokedAt || row.expiresAt < new Date() || row.userId !== claims.sub) {
       throw new UnauthorizedException({ code: 'SESSION_REVOKED', message: 'Session is no longer valid' });
     }
 
+    const mfaVerified = row.authProvider === 'keycloak' ? await this.keycloak.validate(row.familyId, row.userId) : row.mfaEnabled;
     const c = ctx();
     c.userId = row.userId;
     c.sessionId = claims.sid;
     c.isPlatformAdmin = row.isPlatformAdmin;
-    c.mfaEnabled = row.mfaEnabled;
+    c.mfaEnabled = mfaVerified;
 
     if (claims.tid) {
       const m = await this.auth.resolveMembership(row.userId, claims.tid);
-      if (m && m.status === 'active' && m.tenantStatus === 'active' && (!m.requireMfa || row.mfaEnabled)) {
+      if (m && m.status === 'active' && m.tenantStatus === 'active' && (!m.requireMfa || mfaVerified)) {
         c.tenantId = claims.tid;
         c.membershipId = m.membershipId;
         c.roleId = m.roleId;
@@ -79,10 +84,10 @@ export class AuthGuard implements CanActivate {
 
     if (this.meta<boolean>(PLATFORM_ADMIN_KEY, context)) {
       if (!row.isPlatformAdmin) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Platform administrators only' });
-      if (!row.mfaEnabled && config().PLATFORM_ADMIN_REQUIRE_MFA) {
+      if (!mfaVerified && config().PLATFORM_ADMIN_REQUIRE_MFA) {
         throw new ForbiddenException({
           code: ERROR_CODES.MFA_SETUP_REQUIRED,
-          message: 'Platform administrators must enable two-factor authentication',
+          message:config().AUTH_PROVIDER==='keycloak'?'Complete a new Keycloak sign-in with password and OTP to access the platform.':'Platform administrators must enable two-factor authentication',
         });
       }
       return true;
@@ -96,7 +101,11 @@ export class AuthGuard implements CanActivate {
     if (required?.length) {
       const missing = required.filter((p) => !c.permissions!.has(p));
       if (missing.length) {
-        throw new ForbiddenException({ code: 'FORBIDDEN', message: 'You do not have permission to perform this action', details: { missing } });
+        throw new ForbiddenException({
+          code: 'FORBIDDEN',
+          message: 'You do not have permission to perform this action',
+          details: { missing },
+        });
       }
     }
     return true;

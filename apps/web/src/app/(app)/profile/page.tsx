@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Alert, Badge, Button, Card, ErrorText, Field, Input, PageHeader, Select } from '@/components/ui';
+import { ManagedCredentials } from '@/components/managed-credentials';
 import { ApiError, api } from '@/lib/api';
 import { type Locale, useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
@@ -112,9 +113,10 @@ export default function ProfilePage() {
     },
   });
   const logoutAll = useMutation({
-    mutationFn: () => api.post('/auth/logout-all'),
-    onSuccess: () => {
+    mutationFn: () => api.post<{logoutUrl?:string|null}|undefined>('/auth/logout-all'),
+    onSuccess: (result) => {
       qc.clear();
+      if(result?.logoutUrl) {window.location.assign(result.logoutUrl);return;}
       router.replace('/login');
     },
   });
@@ -139,7 +141,7 @@ export default function ProfilePage() {
             <Button type="submit" loading={profile.isPending}>{t('common.save')}</Button>
           </form>
         </Card>
-        <Card title={t('profile.changePassword')}>
+        {me.user.authProvider==='keycloak'?<ManagedCredentials signedIn />:<><Card title={t('profile.changePassword')}>
           <form className="space-y-3" onSubmit={(e) => (e.preventDefault(), password.mutate())}>
             <ErrorText error={password.error} />
             {password.isSuccess && <Alert tone="green">{t('common.saved')}</Alert>}
@@ -149,7 +151,7 @@ export default function ProfilePage() {
             <Button type="submit" loading={password.isPending}>{t('profile.changePassword')}</Button>
           </form>
         </Card>
-        <MfaCard />
+        <MfaCard /></>}
         <Card title={t('nav.logout')}>
           <Button variant="secondary" loading={logoutAll.isPending} onClick={() => logoutAll.mutate()}>{t('profile.logoutAll')}</Button>
         </Card>

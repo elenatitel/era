@@ -193,8 +193,9 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
   const { me, properties, property, setPropertyId, can } = useSession();
 
   async function logout() {
-    await api.post('/auth/logout').catch(() => undefined);
+    const result=await api.post<{logoutUrl?:string|null}|undefined>('/auth/logout').catch(() => undefined);
     qc.clear();
+    if(result?.logoutUrl) {window.location.assign(result.logoutUrl);return;}
     router.replace('/login');
   }
 

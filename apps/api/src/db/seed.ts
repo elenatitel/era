@@ -29,6 +29,18 @@ import {
 } from './schema.js';
 
 export async function ensurePlatformAdmin(db: DbService, email: string, password: string) {
+  if(config().AUTH_PROVIDER==='keycloak') {
+    const issuer=config().OIDC_ISSUER!, subject=config().OIDC_BOOTSTRAP_SUBJECT;
+    if(!subject) throw new Error('OIDC_BOOTSTRAP_SUBJECT must explicitly bind the ERA platform administrator');
+    const [existing]=await db.db.select().from(users).where(sql`lower(${users.email}) = ${email.toLowerCase()}`);
+    if(existing) {
+      if(existing.oidcIssuer && (existing.oidcIssuer!==issuer || existing.oidcSubject!==subject)) throw new Error('Refusing platform administrator identity rebinding');
+      await db.db.update(users).set({oidcIssuer:issuer,oidcSubject:subject,isPlatformAdmin:true}).where(eq(users.id,existing.id));
+      return existing.id;
+    }
+    const [user]=await db.db.insert(users).values({email:email.toLowerCase(),name:'ERA Platform Administrator',locale:'en',isPlatformAdmin:true,oidcIssuer:issuer,oidcSubject:subject}).returning();
+    return user!.id;
+  }
   const [existing] = await db.db.select().from(users).where(sql`lower(${users.email}) = ${email.toLowerCase()}`);
   if (existing) {
     if (!existing.isPlatformAdmin) await db.db.update(users).set({ isPlatformAdmin: true }).where(eq(users.id, existing.id));
@@ -167,9 +179,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const db = new DbService();
   try {
     const c = config();
-    if (c.PLATFORM_ADMIN_EMAIL && c.PLATFORM_ADMIN_PASSWORD) {
-      if (c.PLATFORM_ADMIN_PASSWORD.length < 12) throw new Error('PLATFORM_ADMIN_PASSWORD must have at least 12 characters');
-      await ensurePlatformAdmin(db, c.PLATFORM_ADMIN_EMAIL, c.PLATFORM_ADMIN_PASSWORD);
+    if (c.PLATFORM_ADMIN_EMAIL && (c.PLATFORM_ADMIN_PASSWORD || c.AUTH_PROVIDER==='keycloak')) {
+      if (c.AUTH_PROVIDER==='local' && (c.PLATFORM_ADMIN_PASSWORD?.length??0) < 12) throw new Error('PLATFORM_ADMIN_PASSWORD must have at least 12 characters');
+      await ensurePlatformAdmin(db, c.PLATFORM_ADMIN_EMAIL, c.PLATFORM_ADMIN_PASSWORD ?? '');
       console.log(`Platform admin ready: ${c.PLATFORM_ADMIN_EMAIL} (enable 2FA at first sign-in)`);
     }
     if (process.argv.includes('--demo')) {

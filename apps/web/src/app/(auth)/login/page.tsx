@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, ErrorText, Field, Input } from '@/components/ui';
+import { Alert, Button, ErrorText, Field, Input, Spinner } from '@/components/ui';
+import { useAuthConfig } from '@/lib/auth-config';
 import { api } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 
@@ -17,6 +18,7 @@ function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const qc = useQueryClient();
+  const auth=useAuthConfig();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mfaToken, setMfaToken] = useState<string | null>(null);
@@ -47,6 +49,16 @@ function LoginForm() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if(auth.isPending) return <Spinner />;
+  if(auth.error) return <ErrorText error={auth.error} />;
+  if(auth.data.provider==='keycloak') {
+    const error=params.get('error');
+    return <div className="space-y-5"><h1 className="font-display text-[32px] leading-[38px] font-medium">{t('auth.welcome')}</h1><p className="text-sm text-muted">{t('auth.ssoHint')}</p>
+      {error&&<Alert tone="amber">{t(error==='access_denied'?'auth.accessDenied':error==='oidc_unavailable'?'auth.signInUnavailable':'auth.oidcFailed')}</Alert>}
+      <Button className="w-full" onClick={()=>window.location.assign(auth.data.loginUrl+(error==='access_denied'||params.get('reauth')==='true'?'?reauth=true':''))}>{t('auth.signIn')}</Button>
+    </div>;
   }
 
   return (

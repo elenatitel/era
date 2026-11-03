@@ -36,7 +36,14 @@ function assertCanGrant(permissions: string[], roleKey?: string | null) {
   if (excess.length) throw forbidden(`You cannot grant permissions you do not have: ${excess.join(', ')}`);
 }
 
+function assertPropertyGrant(ids: string[]) {
+  const own = ctx().propertyIds;
+  if(own?.length && (!ids.length || ids.some(id=>!own.includes(id))))
+    throw forbidden('You cannot grant or manage access beyond your own properties');
+}
+
 async function assertPropertiesExist(tx: Tx, ids: string[]) {
+  assertPropertyGrant(ids);
   if (!ids.length) return;
   const rows = await tx.select({ id: properties.id }).from(properties).where(inArray(properties.id, ids));
   if (rows.length !== new Set(ids).size) throw unprocessable('Unknown property in propertyIds');
@@ -103,11 +110,13 @@ export class TenantService {
   async updateMember(id: string, data: { roleId?: string; propertyIds?: string[]; status?: 'active' | 'disabled' }) {
     const result = await this.db.tenant(async (tx) => {
       const [m] = await tx
-        .select({ membership: memberships, roleKey: roles.key })
+        .select({ membership: memberships, roleKey: roles.key, permissions: roles.permissions })
         .from(memberships)
         .innerJoin(roles, eq(roles.id, memberships.roleId))
         .where(eq(memberships.id, id));
       if (!m) throw notFound('Member');
+      assertPropertyGrant(m.membership.propertyIds);
+      assertCanGrant(m.permissions,m.roleKey);
       if (m.membership.userId === ctx().userId) throw forbidden('You cannot change your own access');
       if (m.roleKey === 'owner' && !isOwner()) throw forbidden('Only owners can modify other owners');
       let newRoleKey = m.roleKey;
@@ -133,11 +142,13 @@ export class TenantService {
   async removeMember(id: string) {
     const userId = await this.db.tenant(async (tx) => {
       const [m] = await tx
-        .select({ membership: memberships, roleKey: roles.key })
+        .select({ membership: memberships, roleKey: roles.key, permissions: roles.permissions })
         .from(memberships)
         .innerJoin(roles, eq(roles.id, memberships.roleId))
         .where(eq(memberships.id, id));
       if (!m) throw notFound('Member');
+      assertPropertyGrant(m.membership.propertyIds);
+      assertCanGrant(m.permissions,m.roleKey);
       if (m.membership.userId === ctx().userId) throw forbidden('You cannot remove yourself');
       if (m.roleKey === 'owner' && !isOwner()) throw forbidden('Only owners can remove other owners');
       await tx.delete(memberships).where(eq(memberships.id, id));
@@ -234,6 +245,7 @@ export class TenantService {
   }
 
   async createRole(input: { name: string; description: string | null; permissions: string[] }) {
+    if(ctx().propertyIds?.length) throw forbidden('Role definitions require organization-wide access');
     assertCanGrant(input.permissions);
     return this.db.tenant(async (tx) => {
       const [role] = await tx
@@ -246,6 +258,7 @@ export class TenantService {
   }
 
   async updateRole(id: string, input: { name: string; description: string | null; permissions: string[] }) {
+    if(ctx().propertyIds?.length) throw forbidden('Role definitions require organization-wide access');
     assertCanGrant(input.permissions);
     return this.db.tenant(async (tx) => {
       const [existing] = await tx.select().from(roles).where(eq(roles.id, id));
@@ -263,6 +276,7 @@ export class TenantService {
   }
 
   async deleteRole(id: string) {
+    if(ctx().propertyIds?.length) throw forbidden('Role definitions require organization-wide access');
     await this.db.tenant(async (tx) => {
       const [existing] = await tx.select().from(roles).where(eq(roles.id, id));
       if (!existing) throw notFound('Role');

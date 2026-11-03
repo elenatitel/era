@@ -3,11 +3,14 @@
 import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
 import { Alert, Button, ErrorText, Field, Input } from '@/components/ui';
+import { useAuthConfig } from '@/lib/auth-config';
+import { ManagedCredentials } from '@/components/managed-credentials';
 import { api } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 
 export default function ForgotPasswordPage() {
   const { t } = useI18n();
+  const auth=useAuthConfig();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -27,6 +30,9 @@ export default function ForgotPasswordPage() {
     }
   }
 
+  if(auth.isPending) return null;
+  if(auth.error) return <ErrorText error={auth.error} />;
+  if(auth.data.provider==='keycloak') return <ManagedCredentials />;
   return (
     <form onSubmit={submit} className="space-y-5">
       <div>

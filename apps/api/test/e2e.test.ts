@@ -290,6 +290,28 @@ describe('roles and permissions', () => {
     assert.equal((await owner.patch(`/members/${self.id}`, { roleId: custom.body.id })).status, 403);
   });
 
+  test('property-restricted managers cannot widen or manage access outside their scope', async () => {
+    const owner=await login('owner@demo.test');
+    const properties=(await owner.get('/properties')).body;
+    const own=properties[0].id;
+    const other=await owner.post('/properties',{name:'Restricted delegation test'});
+    assert.equal(other.status,201);
+    const members=(await owner.get('/members')).body;
+    const managerMember=members.find((m:any)=>m.email==='manager@demo.test');
+    const frontdeskMember=members.find((m:any)=>m.email==='frontdesk@demo.test');
+    const roles=(await owner.get('/roles')).body;
+    const frontdeskRole=roles.find((r:any)=>r.key==='front_desk');
+    assert.equal((await owner.patch(`/members/${managerMember.id}`,{propertyIds:[own]})).status,200);
+    try {
+      const manager=await login('manager@demo.test');
+      for(const propertyIds of [[],[other.body.id]])
+        assert.equal((await manager.post('/invitations',{email:'restricted-'+Math.random()+'@example.test',roleId:frontdeskRole.id,propertyIds})).status,403);
+      assert.equal((await manager.post('/invitations',{email:'allowed-scope@example.test',roleId:frontdeskRole.id,propertyIds:[own]})).status,201);
+      assert.equal((await manager.patch(`/members/${frontdeskMember.id}`,{propertyIds:[]})).status,403);
+      assert.equal((await manager.req('DELETE',`/members/${frontdeskMember.id}`)).status,403);
+    } finally {assert.equal((await owner.patch(`/members/${managerMember.id}`,{propertyIds:[]})).status,200);}
+  });
+
   test('disabling a member revokes their sessions', async () => {
     const owner = await login('owner@demo.test');
     const rev = await login('revenue@demo.test');
@@ -430,6 +452,9 @@ describe('hotel operations', () => {
     const hk = await login('housekeeper@demo.test');
     const mine = (await hk.get(`/housekeeping/tasks?propertyId=${propertyId}`)).body;
     assert.deepEqual(mine.map((t: any) => t.id), [task.id]);
+    const limitedBoard=(await hk.get(`/housekeeping/board?propertyId=${propertyId}`)).body;
+    assert.ok(limitedBoard.rooms.every((r:any)=>r.guest===null && r.arrivalToday===null));
+    assert.ok(limitedBoard.rooms.flatMap((r:any)=>r.tasks).every((t:any)=>t.assignedToUserId===maid.userId));
     const other = tasks.find((t: any) => t.id !== task.id);
     if (other) assert.equal((await hk.patch(`/housekeeping/tasks/${other.id}`, { status: 'done' })).status, 403);
     assert.equal((await hk.patch(`/housekeeping/tasks/${task.id}`, { status: 'inspected' })).status, 409);

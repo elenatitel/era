@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { and, eq, isNull, ne } from 'drizzle-orm';
+import { and, eq, isNull, lt, ne } from 'drizzle-orm';
 import type { CookieOptions, Response } from 'express';
 import { jwtVerify, SignJWT } from 'jose';
 import { config } from '../config.js';
@@ -8,11 +8,13 @@ import { maybeCtx } from '../common/context.js';
 import { randomToken, sha256 } from '../common/crypto.js';
 import { AuditService } from '../db/audit.service.js';
 import { DbService } from '../db/db.service.js';
-import { sessions } from '../db/schema.js';
+import { oidcSessions, sessions } from '../db/schema.js';
 
 export const ACCESS_COOKIE = 'pms_at';
 export const REFRESH_COOKIE = 'pms_rt';
 export const CSRF_COOKIE = 'pms_csrf';
+import { KeycloakService, type ProviderSession } from './keycloak.service.js';
+
 const ISSUER = 'pms-api';
 const AUDIENCE = 'pms-web';
 /** Concurrent refreshes from several tabs within this window are not treated as token theft. */
@@ -31,6 +33,7 @@ export class TokensService {
   constructor(
     private readonly db: DbService,
     private readonly audit: AuditService,
+    private readonly keycloak: KeycloakService,
   ) {}
 
   // ---------- JWTs ----------
@@ -100,36 +103,51 @@ export class TokensService {
   }
 
   // ---------- sessions ----------
-  async createSession(res: Response, userId: string, tenantId: string | null) {
-    const refreshToken = randomToken(32);
+  async createSession(res: Response, userId: string, tenantId: string | null, provider?: ProviderSession) {
+    const refreshToken = randomToken(32),
+      familyId = randomUUID();
+    const expiresAt = new Date(Date.now() + config().SESSION_MAX_DAYS * 86_400_000);
     const c = maybeCtx();
-    const [session] = await this.db.db
-      .insert(sessions)
-      .values({
-        userId,
-        tenantId,
-        familyId: randomUUID(),
-        refreshTokenHash: sha256(refreshToken),
-        expiresAt: new Date(Date.now() + config().SESSION_MAX_DAYS * 86_400_000),
-        ip: c?.ip ?? null,
-        userAgent: c?.userAgent?.slice(0, 300) ?? null,
-      })
-      .returning({ id: sessions.id });
-    await this.writeCookies(res, { sub: userId, sid: session!.id, tid: tenantId }, refreshToken);
+    const session = await this.db.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(sessions)
+        .values({
+          userId,
+          tenantId,
+          familyId,
+          expiresAt,
+          authProvider: provider ? 'keycloak' : 'local',
+          refreshTokenHash: sha256(refreshToken),
+          ip: c?.ip ?? null,
+          userAgent: c?.userAgent?.slice(0, 300) ?? null,
+        })
+        .returning({ id: sessions.id });
+      if (provider) {
+        await tx.delete(oidcSessions).where(lt(oidcSessions.expiresAt, new Date()));
+        await tx.insert(oidcSessions).values({ ...provider, familyId, userId, expiresAt });
+      }
+      return row!;
+    });
+    await this.writeCookies(res, { sub: userId, sid: session.id, tid: tenantId }, refreshToken);
     this.setCsrfCookie(res);
-    return session!.id;
+    return session.id;
   }
 
   /** Rotates the refresh token. Re-use of a rotated token revokes the whole session family. */
   async refresh(res: Response, presented: string | undefined) {
     if (!presented) throw new UnauthorizedException({ code: 'NO_SESSION', message: 'Not signed in' });
     const hash = sha256(presented);
+    const [candidate] = await this.db.db.select().from(sessions).where(eq(sessions.refreshTokenHash, hash));
+    if (!candidate || candidate.authProvider !== config().AUTH_PROVIDER) {
+      this.clearCookies(res);
+      throw new UnauthorizedException({ code: 'SESSION_EXPIRED', message: 'Please sign in again' });
+    }
+    if (candidate.authProvider === 'keycloak' && !candidate.revokedAt) await this.keycloak.validate(candidate.familyId, candidate.userId);
     const result = await this.db.db.transaction(async (tx) => {
       const [current] = await tx.select().from(sessions).where(eq(sessions.refreshTokenHash, hash)).for('update');
       if (!current) return { kind: 'invalid' as const };
       if (current.revokedAt) {
-        const withinGrace =
-          current.revokedReason === 'rotated' && Date.now() - current.revokedAt.getTime() < ROTATION_GRACE_MS;
+        const withinGrace = current.revokedReason === 'rotated' && Date.now() - current.revokedAt.getTime() < ROTATION_GRACE_MS;
         if (withinGrace) return { kind: 'race' as const };
         if (current.revokedReason === 'rotated') {
           await tx
@@ -154,6 +172,7 @@ export class TokensService {
           userId: current.userId,
           tenantId: current.tenantId,
           familyId: current.familyId,
+          authProvider: current.authProvider,
           refreshTokenHash: sha256(nextToken),
           expiresAt: current.expiresAt,
           ip: c?.ip ?? null,
@@ -181,6 +200,29 @@ export class TokensService {
     await this.writeCookies(res, { sub: userId, sid: sessionId, tid: tenantId });
   }
 
+  async sessionForLogout(access?: string, refresh?: string) {
+    if (access) {
+      try {
+        const claims = await this.verifyAccess(access);
+        const [session] = await this.db.db.select().from(sessions).where(eq(sessions.id, claims.sid));
+        if (session && session.userId === claims.sub && !session.revokedAt && session.expiresAt > new Date()) return session;
+      } catch {}
+    }
+    if (refresh) {
+      const [session] = await this.db.db
+        .select()
+        .from(sessions)
+        .where(eq(sessions.refreshTokenHash, sha256(refresh)));
+      if (session && !session.revokedAt && session.expiresAt > new Date()) return session;
+    }
+    return null;
+  }
+
+  async familyForSession(sessionId: string) {
+    const [session] = await this.db.db.select({ familyId: sessions.familyId }).from(sessions).where(eq(sessions.id, sessionId));
+    return session!.familyId;
+  }
+
   async revokeSession(sessionId: string, reason = 'logout') {
     const [s] = await this.db.db.select({ familyId: sessions.familyId }).from(sessions).where(eq(sessions.id, sessionId));
     if (!s) return;
@@ -194,12 +236,6 @@ export class TokensService {
     await this.db.db
       .update(sessions)
       .set({ revokedAt: new Date(), revokedReason: reason })
-      .where(
-        and(
-          eq(sessions.userId, userId),
-          isNull(sessions.revokedAt),
-          exceptSessionId ? ne(sessions.id, exceptSessionId) : undefined,
-        ),
-      );
+      .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt), exceptSessionId ? ne(sessions.id, exceptSessionId) : undefined));
   }
 }

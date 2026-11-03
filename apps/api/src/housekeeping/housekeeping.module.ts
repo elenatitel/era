@@ -62,7 +62,7 @@ export class HousekeepingService {
         .select({ task: housekeepingTasks, assigneeName: assignee.name })
         .from(housekeepingTasks)
         .leftJoin(assignee, eq(assignee.id, housekeepingTasks.assignedToUserId))
-        .where(and(eq(housekeepingTasks.propertyId, propertyId), eq(housekeepingTasks.date, day), ne(housekeepingTasks.status, 'cancelled')));
+        .where(and(eq(housekeepingTasks.propertyId, propertyId), eq(housekeepingTasks.date, day), ne(housekeepingTasks.status, 'cancelled'), hasPermission('housekeeping.manage')?undefined:eq(housekeepingTasks.assignedToUserId,ctx().userId!)));
       return {
         businessDate: day,
         rooms: roomList.map((r) => {
@@ -70,8 +70,8 @@ export class HousekeepingService {
           const arriving = stays.find((s) => s.roomId === r.id && s.status !== 'checked_in');
           return {
             ...r,
-            guest: inHouse ? { name: inHouse.guestName, departure: inHouse.departure, segment: inHouse.segment, departingToday: inHouse.departure <= day } : null,
-            arrivalToday: arriving ? { name: arriving.guestName, segment: arriving.segment } : null,
+            guest: hasPermission('guests.read') && hasPermission('reservations.read') && inHouse ? { name: inHouse.guestName, departure: inHouse.departure, segment: inHouse.segment, departingToday: inHouse.departure <= day } : null,
+            arrivalToday: hasPermission('guests.read') && hasPermission('reservations.read') && arriving ? { name: arriving.guestName, segment: arriving.segment } : null,
             tasks: tasks.filter((t) => t.task.roomId === r.id).map((t) => ({ ...t.task, assigneeName: t.assigneeName })),
           };
         }),

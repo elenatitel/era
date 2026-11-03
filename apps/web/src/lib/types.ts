@@ -1,7 +1,7 @@
 import type { Permission } from '@pms/shared';
 
 export interface Me {
-  user: { id: string; email: string; name: string; locale: string; mfaEnabled: boolean; isPlatformAdmin: boolean; recoveryCodesLeft: number };
+  user: { authProvider:'local'|'keycloak'; id: string; email: string; name: string; locale: string; mfaEnabled: boolean; isPlatformAdmin: boolean; recoveryCodesLeft: number };
   tenant: { id: string; name: string; slug: string; requireMfa: boolean; defaultLocale: string } | null;
   role: { id: string; key: string | null } | null;
   permissions: Permission[];

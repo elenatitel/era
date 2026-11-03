@@ -4,11 +4,14 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { Alert, Button, ErrorText, Field, Input } from '@/components/ui';
+import { useAuthConfig } from '@/lib/auth-config';
+import { ManagedCredentials } from '@/components/managed-credentials';
 import { api } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 
 export default function ResetPasswordPage() {
   const { t } = useI18n();
+  const auth=useAuthConfig();
   const { token } = useParams<{ token: string }>();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -31,6 +34,9 @@ export default function ResetPasswordPage() {
     }
   }
 
+  if(auth.isPending) return null;
+  if(auth.error) return <ErrorText error={auth.error} />;
+  if(auth.data.provider==='keycloak') return <ManagedCredentials />;
   return (
     <form onSubmit={submit} className="space-y-5">
       <h1 className="font-display text-[32px] leading-[38px] font-medium">{t('auth.forgotTitle')}</h1>
