@@ -20,3 +20,5 @@ spec:
     automated:
       prune: false
       selfHeal: true
+
+# Deliberately modified only to verify the PR guard; never merge this test.
