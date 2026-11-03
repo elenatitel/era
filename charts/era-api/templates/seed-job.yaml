@@ -38,6 +38,12 @@ spec:
           env:
             - name: DATABASE_URL
               valueFrom: {secretKeyRef: {name: {{ $secret }}, key: DATABASE_URL}}
+            {{- if eq .Values.auth.provider "keycloak" }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: {{ .Values.auth.existingSecret }}, key: OIDC_CLIENT_SECRET}}
+            - name: OIDC_BOOTSTRAP_SUBJECT
+              valueFrom: {secretKeyRef: {name: {{ .Values.auth.existingSecret }}, key: OIDC_BOOTSTRAP_SUBJECT}}
+            {{- end }}
             - name: JWT_SECRET
               valueFrom: {secretKeyRef: {name: {{ $secret }}, key: JWT_SECRET}}
             - name: ENCRYPTION_KEY

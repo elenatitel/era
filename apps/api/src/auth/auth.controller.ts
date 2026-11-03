@@ -13,11 +13,13 @@ import {
   switchTenantSchema,
   updateProfileSchema,
 } from '@pms/shared';
+import { config } from '../config.js';
+import { KeycloakService } from './keycloak.service.js';
 import { ctx } from '../common/context.js';
 import { ZBody } from '../common/zod.js';
 import { AuthService } from './auth.service.js';
 import { Public } from './decorators.js';
-import { CSRF_COOKIE, REFRESH_COOKIE, TokensService } from './tokens.service.js';
+import { ACCESS_COOKIE, CSRF_COOKIE, REFRESH_COOKIE, TokensService } from './tokens.service.js';
 
 const STRICT = { default: { limit: 10, ttl: 60_000 } };
 
@@ -26,6 +28,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly tokens: TokensService,
+    private readonly keycloak: KeycloakService,
   ) {}
 
   /** Issues the CSRF cookie; the web app calls this on load. */
@@ -60,18 +63,36 @@ export class AuthController {
     await this.tokens.refresh(res, req.cookies?.[REFRESH_COOKIE] as string | undefined);
   }
 
+  @Public()
+  @Get('config')
+  authConfig() {
+    return {
+      provider: config().AUTH_PROVIDER,
+      loginUrl: '/api/auth/oidc/login',
+      accountUrl: config().AUTH_PROVIDER === 'keycloak' ? this.keycloak.accountUrl() : null,
+    };
+  }
+
+  @Public()
   @Post('logout')
-  @HttpCode(204)
-  async logout(@Res({ passthrough: true }) res: Response) {
-    await this.tokens.revokeSession(ctx().sessionId!);
+  async logout(@Req() req: Request, @Res() res: Response) {
+    const session = await this.tokens.sessionForLogout(req.cookies?.[ACCESS_COOKIE], req.cookies?.[REFRESH_COOKIE]);
+    let logoutUrl = null;
+    if (session) {
+      await this.tokens.revokeSession(session.id);
+      if (session.authProvider === 'keycloak') logoutUrl = await this.keycloak.logout(res, session.familyId);
+    }
     this.tokens.clearCookies(res);
+    return config().AUTH_PROVIDER === 'keycloak' ? res.status(200).json({ logoutUrl }) : res.status(204).send();
   }
 
   @Post('logout-all')
-  @HttpCode(204)
-  async logoutAll(@Res({ passthrough: true }) res: Response) {
+  async logoutAll(@Res() res: Response) {
     await this.tokens.revokeAllForUser(ctx().userId!, 'logout_all');
+    const logoutUrl =
+      config().AUTH_PROVIDER === 'keycloak' ? await this.keycloak.logout(res, await this.tokens.familyForSession(ctx().sessionId!)) : null;
     this.tokens.clearCookies(res);
+    return config().AUTH_PROVIDER === 'keycloak' ? res.status(200).json({ logoutUrl }) : res.status(204).send();
   }
 
   @Get('me')

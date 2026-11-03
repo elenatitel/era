@@ -36,6 +36,10 @@ const en = {
     yourName: 'Your name', inviteAccepted: 'Invitation accepted. Sign in to continue.',
     chooseOrg: 'Choose an organization', noOrgs: 'You are not a member of any organization yet.',
     backToLogin: 'Back to sign in',
+    ssoHint:'Continue to your staff sign-in account.', ssoManaged:'Passwords, recovery and two-factor authentication are managed in Keycloak.',
+    manageCredentials:'Manage password and MFA', reauthenticate:'Sign in again with MFA',
+    oidcFailed:'Sign-in could not be completed. Please try again.', accessDenied:'This account has no ERA access. Contact your organization owner.',
+    signInUnavailable:'Sign-in service is unavailable. Please reload and try again.',
   },
   dashboard: {
     title: 'Dashboard', businessDate: 'Business date', occupancy: 'Occupancy', inHouse: 'In-house',
@@ -273,6 +277,10 @@ const ro: DeepPartial<Dict> = {
     yourName: 'Numele dumneavoastră', inviteAccepted: 'Invitație acceptată. Autentificați-vă pentru a continua.',
     chooseOrg: 'Alegeți organizația', noOrgs: 'Nu sunteți încă membru al vreunei organizații.',
     backToLogin: 'Înapoi la autentificare',
+    ssoHint:'Continuați către contul de autentificare pentru personal.', ssoManaged:'Parolele, recuperarea contului și autentificarea în doi pași sunt gestionate în Keycloak.',
+    manageCredentials:'Gestionează parola și MFA', reauthenticate:'Autentifică-te din nou cu MFA',
+    oidcFailed:'Autentificarea nu a putut fi finalizată. Încercați din nou.', accessDenied:'Acest cont nu are acces ERA. Contactați proprietarul organizației.',
+    signInUnavailable:'Serviciul de autentificare nu este disponibil. Reîncărcați pagina și încercați din nou.',
   },
   dashboard: {
     title: 'Panou de control', businessDate: 'Zi hotelieră', occupancy: 'Grad de ocupare', inHouse: 'Cazați',

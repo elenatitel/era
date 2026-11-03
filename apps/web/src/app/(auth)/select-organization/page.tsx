@@ -38,6 +38,7 @@ export default function SelectOrganizationPage() {
     <div className="space-y-5">
       <h1 className="font-display text-[32px] leading-[38px] font-medium">{t('auth.chooseOrg')}</h1>
       <ErrorText error={error} />
+      {me.data.user.authProvider==='keycloak' && list.some(m=>m.requireMfa) && !me.data.user.mfaEnabled && <Alert tone="amber"><p>{t('auth.ssoManaged')}</p><Link href="/profile" className="text-accent underline">{t('auth.manageCredentials')}</Link><br/><Link href="/login?reauth=true" className="text-accent underline">{t('auth.reauthenticate')}</Link></Alert>}
       {list.length === 0 && <Alert tone="amber">{t('auth.noOrgs')}</Alert>}
       <ul className="space-y-2">
         {list.map((m) => (

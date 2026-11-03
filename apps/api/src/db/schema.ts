@@ -12,6 +12,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  check,
   boolean,
   date,
   doublePrecision,
@@ -57,6 +58,8 @@ export const users = pgTable(
     email: text().notNull(),
     name: text().notNull(),
     passwordHash: text(),
+    oidcIssuer: text(),
+    oidcSubject: text(),
     locale: text().notNull().default('en'),
     isPlatformAdmin: boolean().notNull().default(false),
     mfaEnabled: boolean().notNull().default(false),
@@ -71,7 +74,7 @@ export const users = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex('users_email_unique').on(sql`lower(${t.email})`)],
+  (t) => [uniqueIndex('users_email_unique').on(sql`lower(${t.email})`), uniqueIndex('users_oidc_identity_unique').on(t.oidcIssuer, t.oidcSubject), check('users_oidc_identity_pair',sql`(${t.oidcIssuer} IS NULL) = (${t.oidcSubject} IS NULL)`)],
 );
 
 export const sessions = pgTable(
@@ -84,6 +87,7 @@ export const sessions = pgTable(
     tenantId: uuid().references(() => tenants.id, { onDelete: 'set null' }),
     familyId: uuid().notNull(),
     refreshTokenHash: text().notNull().unique(),
+    authProvider: text().notNull().default('local'),
     expiresAt: timestamp({ withTimezone: true }).notNull(),
     revokedAt: timestamp({ withTimezone: true }),
     revokedReason: text(),
@@ -94,6 +98,19 @@ export const sessions = pgTable(
   },
   (t) => [index().on(t.userId), index().on(t.familyId)],
 );
+
+/** Provider credentials stay encrypted on the server, keyed by stable session family. */
+export const oidcSessions = pgTable('oidc_sessions', {
+  familyId: uuid().primaryKey(),
+  userId: uuid().notNull().references(() => users.id, {onDelete: 'cascade'}),
+  issuer: text().notNull(),
+  subject: text().notNull(),
+  refreshTokenEnc: text().notNull(),
+  idTokenEnc: text().notNull(),
+  providerExpiresAt: timestamp({withTimezone:true}).notNull(),
+  expiresAt: timestamp({withTimezone:true}).notNull(),
+  mfaVerified: boolean().notNull().default(false),
+},t=>[index('oidc_sessions_expiry').on(t.expiresAt)]);
 
 export const passwordResetTokens = pgTable('password_reset_tokens', {
   id: pk(),

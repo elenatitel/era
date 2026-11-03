@@ -12,6 +12,7 @@ import { AuditService } from '../db/audit.service.js';
 import { DbService } from '../db/db.service.js';
 import { invitations, memberships, passwordResetTokens, roles, tenants, users } from '../db/schema.js';
 import { MailService } from '../mail/mail.service.js';
+import type { ProviderIdentity, ProviderSession } from './keycloak.service.js';
 import { TokensService } from './tokens.service.js';
 
 const MAX_FAILED_LOGINS = 5;
@@ -45,7 +46,12 @@ export class AuthService {
 
   // ---------------------------------------------------------------- login
 
+  private localOnly() {
+    if(config().AUTH_PROVIDER !== 'local') throw new BadRequestException({code:'KEYCLOAK_MANAGED',message:'Credentials are managed by Keycloak; use single sign-on'});
+  }
+
   async login(res: Response, email: string, password: string) {
+    this.localOnly();
     const user = await this.findUserByEmail(email);
     if (!user || !user.passwordHash) {
       await argon2.verify(await this.dummyHash, password).catch(() => false);
@@ -74,6 +80,7 @@ export class AuthService {
   }
 
   async loginWithMfa(res: Response, mfaToken: string, code: string) {
+    this.localOnly();
     const userId = await this.tokens.verifyMfa(mfaToken);
     const [user] = await this.db.db.select().from(users).where(eq(users.id, userId));
     if (!user || !user.mfaEnabled) throw this.invalidCredentials();
@@ -127,15 +134,15 @@ export class AuthService {
     return true;
   }
 
-  private async completeLogin(res: Response, user: User) {
+  async completeLogin(res: Response, user: User, provider?: ProviderSession) {
     await this.db.db
       .update(users)
       .set({ failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() })
       .where(eq(users.id, user.id));
     const available = await this.listTenants(user.id);
-    const usable = available.filter((t) => t.status === 'active' && (!t.requireMfa || user.mfaEnabled));
+    const usable = available.filter((t) => t.status === 'active' && (!t.requireMfa || (provider?.mfaVerified ?? user.mfaEnabled)));
     const tenantId = usable.length === 1 ? usable[0]!.tenantId : null;
-    await this.tokens.createSession(res, user.id, tenantId);
+    await this.tokens.createSession(res, user.id, tenantId, provider);
     await this.audit.security('login_success', { userId: user.id, tenantId });
     return { mfaRequired: false as const, tenantSelected: tenantId !== null };
   }
@@ -173,7 +180,7 @@ export class AuthService {
     if (target.requireMfa && !c.mfaEnabled) {
       throw new ForbiddenException({
         code: ERROR_CODES.MFA_SETUP_REQUIRED,
-        message: 'This organization requires two-factor authentication. Enable it in your profile first.',
+        message:config().AUTH_PROVIDER==='keycloak'?'Complete a new Keycloak sign-in with password and OTP for this organization.':'This organization requires two-factor authentication. Enable it in your profile first.',
       });
     }
     await this.tokens.setSessionTenant(res, c.sessionId!, userId, tenantId);
@@ -205,7 +212,8 @@ export class AuthService {
       tenant = t ?? null;
     }
     return {
-      user,
+      user: {...user, mfaEnabled: config().AUTH_PROVIDER==='keycloak' ? Boolean(c.mfaEnabled) : user?.mfaEnabled,
+        authProvider:config().AUTH_PROVIDER},
       tenant,
       role: c.tenantId ? { id: c.roleId, key: c.roleKey } : null,
       permissions: c.permissions ? [...c.permissions] : [],
@@ -221,6 +229,7 @@ export class AuthService {
   }
 
   async changePassword(currentPassword: string, newPassword: string) {
+    this.localOnly();
     const userId = requireUser();
     const [user] = await this.db.db.select().from(users).where(eq(users.id, userId));
     if (!user?.passwordHash || !(await argon2.verify(user.passwordHash, currentPassword).catch(() => false))) {
@@ -235,6 +244,7 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
+    this.localOnly();
     const user = await this.findUserByEmail(email);
     if (!user) {
       await this.audit.security('password_reset_unknown', { metadata: { email } });
@@ -251,6 +261,7 @@ export class AuthService {
   }
 
   async resetPassword(token: string, password: string) {
+    this.localOnly();
     const hash = sha256(token);
     const userId = await this.db.db.transaction(async (tx) => {
       const [row] = await tx
@@ -300,10 +311,11 @@ export class AuthService {
   async describeInvitation(token: string) {
     const { invitation, tenantName } = await this.findInvitation(token);
     const existing = await this.findUserByEmail(invitation.email);
-    return { email: invitation.email, organization: tenantName, accountExists: Boolean(existing?.passwordHash) };
+    return { authProvider:config().AUTH_PROVIDER, email: invitation.email, organization: tenantName, accountExists: Boolean(existing?.passwordHash) };
   }
 
   async acceptInvitation(token: string, name?: string, password?: string) {
+    this.localOnly();
     const { invitation, tenantLocale } = await this.findInvitation(token);
     let user = await this.findUserByEmail(invitation.email);
     if (!user?.passwordHash) {
@@ -335,9 +347,39 @@ export class AuthService {
     return { email: invitation.email };
   }
 
+  async acceptOidcInvitation(token: string, identity: ProviderIdentity): Promise<User> {
+    const {invitation: initial} = await this.findInvitation(token);
+    if(identity.email_verified!==true || !identity.email || identity.email.toLowerCase()!==initial.email.toLowerCase())
+      throw new ForbiddenException({code:'INVITATION_IDENTITY',message:'Sign in with the verified email address this invitation was sent to'});
+    const email = identity.email.toLowerCase();
+    const accepted = await this.db.tenant(async tx => {
+      const [invitation] = await tx.select().from(invitations).where(eq(invitations.id,initial.id)).for('update');
+      const [tenant] = await tx.select().from(tenants).where(eq(tenants.id,initial.tenantId));
+      if(!invitation || invitation.acceptedAt || invitation.revokedAt || invitation.expiresAt<=new Date() || tenant?.status!=='active')
+        throw new BadRequestException({code:'INVALID_TOKEN',message:'Invitation is no longer valid'});
+      const [role] = await tx.select().from(roles).where(eq(roles.id,invitation.roleId));
+      if(!role) throw new BadRequestException({code:'INVALID_TOKEN',message:'Invitation role no longer exists'});
+      let [user] = await tx.select().from(users).where(and(eq(users.oidcIssuer,identity.iss),eq(users.oidcSubject,identity.sub)));
+      if(!user) {
+        if((await tx.select({id:users.id}).from(users).where(sql`lower(${users.email}) = ${email}`)).length)
+          throw new ForbiddenException({code:'IDENTITY_NOT_LINKED',message:'An existing account must be explicitly linked by the ERA platform administrator'});
+        [user] = await tx.insert(users).values({email,name:identity.name || email,
+          oidcIssuer:identity.iss,oidcSubject:identity.sub,locale:tenant.defaultLocale}).returning();
+      }
+      const [existing] = await tx.select().from(memberships).where(and(eq(memberships.tenantId,invitation.tenantId),eq(memberships.userId,user!.id)));
+      if(existing) throw new BadRequestException({code:'ALREADY_MEMBER',message:'This account already has a membership; ask an owner to manage its access'});
+      await tx.insert(memberships).values({tenantId:invitation.tenantId,userId:user!.id,roleId:invitation.roleId,propertyIds:invitation.propertyIds});
+      await tx.update(invitations).set({acceptedAt:new Date()}).where(eq(invitations.id,invitation.id));
+      return user!;
+    },initial.tenantId);
+    await this.audit.security('invitation_accepted',{userId:accepted.id,tenantId:initial.tenantId});
+    return accepted;
+  }
+
   // ---------------------------------------------------------------- MFA
 
   async mfaSetup() {
+    this.localOnly();
     const userId = requireUser();
     const [user] = await this.db.db.select().from(users).where(eq(users.id, userId));
     if (!user) throw new UnauthorizedException();
@@ -349,6 +391,7 @@ export class AuthService {
   }
 
   async mfaEnable(code: string) {
+    this.localOnly();
     const userId = requireUser();
     const [user] = await this.db.db.select().from(users).where(eq(users.id, userId));
     if (!user?.mfaSecretEnc || user.mfaEnabled) throw new BadRequestException({ code: 'MFA_NOT_PENDING', message: 'Start the setup first' });
@@ -367,6 +410,7 @@ export class AuthService {
   }
 
   async mfaDisable(password: string, code: string) {
+    this.localOnly();
     const userId = requireUser();
     const [user] = await this.db.db.select().from(users).where(eq(users.id, userId));
     if (!user?.mfaEnabled) throw new BadRequestException({ code: 'MFA_NOT_ENABLED', message: 'Two-factor authentication is not enabled' });

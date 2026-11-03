@@ -3,9 +3,12 @@ import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { TokensService } from './tokens.service.js';
 
+import { KeycloakService } from './keycloak.service.js';
+import { OidcController } from './oidc.controller.js';
+
 @Module({
-  controllers: [AuthController],
-  providers: [AuthService, TokensService],
-  exports: [AuthService, TokensService],
+  controllers: [AuthController, OidcController],
+  providers: [AuthService, TokensService, KeycloakService],
+  exports: [AuthService, TokensService, KeycloakService],
 })
 export class AuthModule {}

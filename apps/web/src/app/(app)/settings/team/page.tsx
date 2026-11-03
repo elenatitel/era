@@ -38,10 +38,10 @@ function AccessForm({ roles, initial, onSubmit, submitLabel, withEmail, pending,
   error: unknown;
 }) {
   const { t } = useI18n();
-  const { properties } = useSession();
+  const { properties,me } = useSession();
   const [email, setEmail] = useState(initial.email ?? '');
   const [roleId, setRoleId] = useState(initial.roleId);
-  const [propertyIds, setPropertyIds] = useState<string[]>(initial.propertyIds);
+  const [propertyIds, setPropertyIds] = useState<string[]>(initial.propertyIds.length?initial.propertyIds:me.propertyIds);
   return (
     <form className="space-y-4" onSubmit={(e) => (e.preventDefault(), onSubmit({ email, roleId, propertyIds }))}>
       <ErrorText error={error} />
@@ -56,7 +56,7 @@ function AccessForm({ roles, initial, onSubmit, submitLabel, withEmail, pending,
       <div>
         <p className="mb-2 text-sm font-medium">{t('settings.properties')}</p>
         <div className="space-y-1.5">
-          <Checkbox label={t('settings.allProperties')} checked={propertyIds.length === 0} onChange={(v) => v && setPropertyIds([])} />
+          <Checkbox disabled={me.propertyIds.length>0} label={t('settings.allProperties')} checked={propertyIds.length === 0} onChange={(v) => v && setPropertyIds([])} />
           {properties.map((p) => (
             <Checkbox
               key={p.id}
@@ -115,7 +115,7 @@ export default function TeamPage() {
             <tr key={m.id}>
               <Td>
                 <span className="font-medium">{m.name}</span>
-                {m.mfaEnabled && <ShieldCheck size={14} className="ml-1 inline text-success" aria-label="2FA" />}
+                {me.user.authProvider==='keycloak'?<span className="ml-2 text-xs text-muted">Keycloak</span>:m.mfaEnabled && <ShieldCheck size={14} className="ml-1 inline text-success" aria-label="2FA" />}
                 <span className="block text-xs text-muted">{m.email}</span>
               </Td>
               <Td>{m.roleName}</Td>

@@ -14,6 +14,11 @@ const schema = z.object({
   DATABASE_MIGRATION_URL: z.string().optional(),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
   DATABASE_SSL: bool.default(false),
+  AUTH_PROVIDER: z.enum(['local', 'keycloak']).default('local'),
+  OIDC_ISSUER: z.string().transform(v=>v.replace(/\/+$/, '')).optional(),
+  OIDC_CLIENT_ID: z.string().optional(),
+  OIDC_CLIENT_SECRET: z.string().optional(),
+  OIDC_BOOTSTRAP_SUBJECT: z.string().optional(),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   /** 32 random bytes, base64-encoded. Used for AES-256-GCM encryption of secrets and PII. */
   ENCRYPTION_KEY: z
@@ -52,6 +57,13 @@ export function config(): Config {
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
     throw new Error(`Invalid environment configuration:\n${issues}`);
+  }
+  if (parsed.data.AUTH_PROVIDER === 'keycloak') {
+    const issuer = new URL(parsed.data.OIDC_ISSUER ?? 'invalid:');
+    if ((issuer.protocol !== 'https:' && !(parsed.data.NODE_ENV === 'test' && issuer.protocol === 'http:')) || issuer.search || issuer.hash || issuer.username || !issuer.host
+        || !parsed.data.OIDC_CLIENT_ID || !parsed.data.OIDC_CLIENT_SECRET) {
+      throw new Error('Keycloak requires a fixed HTTPS issuer, client ID and client secret');
+    }
   }
   const isProduction = parsed.data.NODE_ENV === 'production';
   if (isProduction && /change-me|example|secret/i.test(parsed.data.JWT_SECRET)) {
