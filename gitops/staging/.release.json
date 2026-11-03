@@ -1,9 +1,9 @@
 {
-  "id": 41671837257,
-  "run_number": 11,
-  "run_attempt": 1,
-  "head_sha": "4d502cbaa7bbe39d69a9bef23752c07d7a5f74f3",
-  "head_branch": "fix/staging-admin-mfa-optional",
-  "html_url": "https://github.com/elenatitel/era/actions/runs/41671837257",
-  "version": "0.1.0-ci.11.1"
+  "id": 41693523280,
+  "run_number": 13,
+  "run_attempt": 2,
+  "head_sha": "fd9f592f4d372a338aa09ce5d311a630cda7fc2e",
+  "head_branch": "feature/demo-mock-data",
+  "html_url": "https://github.com/elenatitel/era/actions/runs/41693523280",
+  "version": "0.1.0-ci.13.2"
 }
