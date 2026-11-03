@@ -1,8 +1,9 @@
 # Images, charts and staging delivery
 
 Staging is https://era-staging.cloud.retreat480.com. The deployment branch is
-`deploy/cnpg-staging`, based on `feature/booking-engine-phase1`. The same pipeline
-also supports `main` and version tags.
+`feature/booking-engine-phase1` until PR #1 is merged; then switch the root Application
+(`gitops/bootstrap.yaml`) and the `staging` image tag to `main`. The same pipeline
+also supports version tags.
 
 ## Delivery
 

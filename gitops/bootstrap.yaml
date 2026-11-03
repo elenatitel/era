@@ -45,9 +45,9 @@ metadata:
 spec:
   project: default
   source:
-    # Public repository; deployment follows the reviewed staging branch.
+    # Public repository. Staging follows the feature branch until PR #1 is merged; then switch to main.
     repoURL: https://github.com/elenatitel/era.git
-    targetRevision: deploy/cnpg-staging
+    targetRevision: feature/booking-engine-phase1
     path: gitops/staging
   destination:
     server: https://kubernetes.default.svc

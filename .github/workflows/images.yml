@@ -2,7 +2,7 @@ name: Build and publish images and digest-locked charts
 
 on:
   pull_request:
-    branches: [main, feature/booking-engine-phase1, deploy/cnpg-staging]
+    branches: [main, feature/booking-engine-phase1]
     paths:
       - 'apps/**'
       - 'packages/**'
@@ -14,7 +14,7 @@ on:
       - '.github/workflows/images.yml'
       - '.github/workflows/ci.yml'
   push:
-    branches: [main, feature/booking-engine-phase1, deploy/cnpg-staging]
+    branches: [main, feature/booking-engine-phase1]
     paths:
       - 'apps/**'
       - 'packages/**'
@@ -85,7 +85,7 @@ jobs:
             echo 'tags<<EOF'
             echo "$image:sha-$GITHUB_SHA"
             echo "$image:build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-            if [[ "$GITHUB_REF" == 'refs/heads/main' || "$GITHUB_REF" == 'refs/heads/deploy/cnpg-staging' ]]; then
+            if [[ "$GITHUB_REF" == 'refs/heads/main' || "$GITHUB_REF" == 'refs/heads/feature/booking-engine-phase1' ]]; then
               echo "$image:staging"
             elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
               # Only Docker-compatible version tags are accepted.
