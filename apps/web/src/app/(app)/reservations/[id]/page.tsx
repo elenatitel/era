@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
+import { ReservationDoorAccess } from '@/components/door-access';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { CHARGE_CATEGORIES, parseMoney } from '@pms/shared';
@@ -137,7 +138,8 @@ export default function ReservationPage() {
       />
       <ErrorText error={cancel.error ?? invoice.error ?? voidItem.error} />
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      {can('frontdesk.checkin')&&<ReservationDoorAccess key={r.id} reservationId={r.id} status={r.status}/>}
+      <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <Card title={t('reservations.guestDetails')}>
           {r.guest && (
             <dl className="space-y-2 text-sm">

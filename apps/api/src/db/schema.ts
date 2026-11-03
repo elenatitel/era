@@ -756,6 +756,7 @@ export const housekeepingTasks = pgTable(
 
 /** Tables protected by RLS. Keep in sync with drizzle/0001_rls.sql (verified by tests). */
 export const TENANT_TABLES = [
+  'door_integrations','door_rooms','door_grants','door_devices',
   'roles',
   'memberships',
   'audit_logs',
@@ -778,3 +779,51 @@ export const TENANT_TABLES = [
   'invoice_lines',
   'housekeeping_tasks',
 ] as const;
+
+/** Public QR lookup only; no guest information, credentials or actuator identifiers. */
+export const doorRoutes = pgTable('door_routes', {
+  publicId: text().primaryKey(),
+  tenantId: tenantId(),
+  roomId: uuid().notNull().unique().references(() => rooms.id, { onDelete: 'cascade' }),
+});
+/** Fixed-window counters are global so retries/restarts/replicas share the same limits. */
+export const doorRateLimits = pgTable('door_rate_limits', {
+  key: text().primaryKey(),
+  bucket: bigint({ mode: 'number' }).notNull(),
+  attempts: integer().notNull(),
+});
+export const doorIntegrations = pgTable('door_integrations', {
+  propertyId: uuid().primaryKey().references(() => properties.id, { onDelete: 'cascade' }),
+  tenantId: tenantId(),
+  url: text().notNull(),
+  tokenEnc: text().notNull(),
+  enabled: boolean().notNull().default(false),
+});
+export const doorRooms = pgTable('door_rooms', {
+  roomId: uuid().primaryKey().references(() => rooms.id, { onDelete: 'cascade' }),
+  tenantId: tenantId(),
+  entityId: text().notNull(),
+  enabled: boolean().notNull().default(false),
+});
+export const doorGrants = pgTable('door_grants', {
+  id: pk(),
+  tenantId: tenantId(),
+  reservationId: uuid().notNull().unique().references(() => reservations.id, { onDelete: 'cascade' }),
+  roomId: uuid().notNull().references(() => rooms.id, { onDelete: 'cascade' }),
+  pinMac: text().notNull(),
+  version: integer().notNull().default(1),
+  revokedAt: timestamp({ withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex().on(t.roomId, t.pinMac)]);
+export const doorDevices = pgTable('door_devices', {
+  id: pk(),
+  tenantId: tenantId(),
+  grantId: uuid().notNull().references(() => doorGrants.id, { onDelete: 'cascade' }),
+  tokenHash: text().notNull().unique(),
+  version: integer().notNull(),
+  name: text().notNull(),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+  revokedAt: timestamp({ withTimezone: true }),
+  lastUsedAt: timestamp({ withTimezone: true }),
+  createdAt: createdAt(),
+});

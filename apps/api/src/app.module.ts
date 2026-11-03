@@ -1,3 +1,4 @@
+import { DoorsModule } from './doors/doors.module.js';
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -38,6 +39,7 @@ import { TenantModule } from './tenant/tenant.module.js';
     HousekeepingModule,
     DashboardModule,
     BookingModule,
+    DoorsModule,
     HealthModule,
   ],
   providers: [

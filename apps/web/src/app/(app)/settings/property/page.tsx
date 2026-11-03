@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { HomeAssistantSettings } from '@/components/door-access';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { CURRENCIES } from '@pms/shared';
@@ -129,6 +130,7 @@ export default function PropertySettingsPage() {
           />
         )}
       </Card>
+      {!creating && property && can('property.manage') && <HomeAssistantSettings key={property.id} propertyId={property.id}/>}
     </>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { RoomDoorSettings } from '@/components/door-access';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { parseMoney } from '@pms/shared';
@@ -114,6 +115,7 @@ function Rooms({ property }: { property: Property }) {
   const types = useQuery({ queryKey: ['room-types', property.id], queryFn: () => api.get<RoomType[]>('/room-types', { propertyId: property.id }) });
   const rooms = useQuery({ queryKey: ['rooms', property.id], queryFn: () => api.get<Room[]>('/rooms', { propertyId: property.id }) });
   const [editType, setEditType] = useState<RoomType | 'new' | null>(null);
+  const [doorRoom,setDoorRoom]=useState<Room|null>(null);
   const [editRoom, setEditRoom] = useState<Room | 'new' | null>(null);
   const done = () => {
     setEditType(null);
@@ -160,11 +162,12 @@ function Rooms({ property }: { property: Property }) {
                 <Badge tone={statusTone[r.status]}>{t(`roomStatus.${r.status}`)}</Badge>{' '}
                 <Badge tone={r.occupancy === 'occupied' ? 'brand' : 'gray'}>{t(`roomStatus.${r.occupancy}`)}</Badge>
               </Td>
-              <Td className="text-right">{manage && <Button size="sm" variant="ghost" onClick={() => setEditRoom(r)}>{t('common.edit')}</Button>}</Td>
+              <Td className="text-right">{manage && <><Button size="sm" variant="ghost" onClick={()=>setDoorRoom(r)}>{locale==='ro'?'Acces ușă':'Door access'}</Button><Button size="sm" variant="ghost" onClick={() => setEditRoom(r)}>{t('common.edit')}</Button></>}</Td>
             </tr>
           ))}
         </Table>
       </Card>
+      {doorRoom&&<RoomDoorSettings roomId={doorRoom.id} number={doorRoom.number} onClose={()=>setDoorRoom(null)}/>}
       <Modal open={editType !== null} onClose={() => setEditType(null)} title={editType === 'new' ? t('settings.newRoomType') : t('common.edit')}>
         {editType && <RoomTypeForm property={property} rt={editType === 'new' ? undefined : editType} onDone={done} />}
       </Modal>
