@@ -1,9 +1,9 @@
 {
-  "id": 41714512912,
-  "run_number": 15,
+  "id": 41726089111,
+  "run_number": 17,
   "run_attempt": 1,
-  "head_sha": "9feb05c471f748cf0dc112f03f517114ab1e9306",
-  "head_branch": "feature/keycloak-authentication",
-  "html_url": "https://github.com/elenatitel/era/actions/runs/41714512912",
-  "version": "0.1.0-ci.15.1"
+  "head_sha": "0f6135594f4e419df8a725e49158f48b554d5a9c",
+  "head_branch": "feature/guest-door-access",
+  "html_url": "https://github.com/elenatitel/era/actions/runs/41726089111",
+  "version": "0.1.0-ci.17.1"
 }
