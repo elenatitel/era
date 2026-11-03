@@ -1,0 +1,9 @@
+{
+  "id": 41654649692,
+  "run_number": 10,
+  "run_attempt": 1,
+  "head_sha": "fdfc62056644a03a06fb5b3302ce2db3528446ef",
+  "head_branch": "feature/ci-delivery-verification",
+  "html_url": "https://github.com/elenatitel/era/actions/runs/41654649692",
+  "version": "0.1.0-ci.10.1"
+}
