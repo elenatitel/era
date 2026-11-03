@@ -1,9 +1,9 @@
 {
-  "id": 41726089111,
-  "run_number": 17,
+  "id": 41729155138,
+  "run_number": 19,
   "run_attempt": 1,
-  "head_sha": "0f6135594f4e419df8a725e49158f48b554d5a9c",
-  "head_branch": "feature/guest-door-access",
-  "html_url": "https://github.com/elenatitel/era/actions/runs/41726089111",
-  "version": "0.1.0-ci.17.1"
+  "head_sha": "f9ac0065b0e130a8298440cd55341e715bc47576",
+  "head_branch": "fix/home-assistant-ipv4-validation",
+  "html_url": "https://github.com/elenatitel/era/actions/runs/41729155138",
+  "version": "0.1.0-ci.19.1"
 }
