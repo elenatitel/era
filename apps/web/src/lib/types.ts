@@ -227,7 +227,8 @@ export interface ReservationDetail {
   folio: FolioItem[];
   payments: Payment[];
   invoices: { id: string; fullNumber: string; type: string; status: string; total: number }[];
-  totals: { charges: number; payments: number; balance: number } | null;
+  /** `pending` is what the stay will still post; `due` is the balance once it has. */
+  totals: { charges: number; payments: number; balance: number; pending: number; due: number } | null;
   onlineCheckinAt: string | null;
   estimatedArrival: string | null;
   guestRequests: string | null;

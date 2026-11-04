@@ -54,7 +54,7 @@ export class ReservationsController {
   @Post('reservations')
   @Perms('reservations.create')
   create(@ZBody(createReservationSchema) body: z.infer<typeof createReservationSchema>) {
-    return this.svc.create(body);
+    return this.svc.create(body, { extraIds: body.extraIds, promoCode: body.promoCode, staff: true });
   }
 
   @Patch('reservations/:id')
@@ -82,6 +82,12 @@ export class ReservationsController {
   @HttpCode(200)
   checkIn(@IdParam() id: string, @ZBody(checkInSchema) body: z.infer<typeof checkInSchema>) {
     return this.svc.checkIn(id, body.roomId, body.allowDirtyRoom);
+  }
+
+  @Get('reservations/:id/check-out-preview')
+  @Perms('frontdesk.checkout')
+  checkOutPreview(@IdParam() id: string) {
+    return this.svc.checkOutPreview(id);
   }
 
   @Post('reservations/:id/check-out')

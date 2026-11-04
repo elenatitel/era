@@ -458,6 +458,90 @@ describe('hotel operations', () => {
     assert.ok(audit_.body.items.some((e: any) => e.action === 'invoice.cancelled'));
   });
 
+  test('direct booking, start to finish: a manager books, changes, hosts, bills and closes a stay', async () => {
+    const mgr = await login('manager@demo.test');
+    const property = (await mgr.get('/properties')).body.find((p: any) => p.id === propertyId);
+    const today = property.businessDate;
+    const rate = 15000;
+
+    const extra = await mgr.post('/extras', { propertyId, name: 'Staff-only transfer', category: 'other', unit: 'per_night', price: 5000, vatRate: 2100, bookableOnline: false, active: true });
+    assert.equal(extra.status, 201, JSON.stringify(extra.body));
+    const company = await mgr.post('/companies', { name: 'Direct Booking SRL', taxId: 'RO998877' });
+    assert.equal(company.status, 201, JSON.stringify(company.body));
+
+    // Book: a negotiated price, an add-on guests cannot buy online, billed to a company.
+    const search = (await mgr.get(`/availability?propertyId=${propertyId}&arrival=${today}&departure=${addDays(today, 2)}&adults=2`)).body;
+    const offer = search.roomTypes.find((t: any) => t.available > 0 && t.fitsOccupancy && t.offers.some((o: any) => o.sellable));
+    const plan = offer.offers.find((o: any) => o.sellable);
+    const booked = await mgr.post('/reservations', {
+      propertyId,
+      roomTypeId: offer.roomType.id,
+      ratePlanId: plan.ratePlanId,
+      arrival: today,
+      departure: addDays(today, 2),
+      adults: 2,
+      guest: { firstName: 'Ana', lastName: 'Popescu' },
+      companyId: company.body.id,
+      source: 'phone',
+      totalOverride: rate * 2,
+      extraIds: [extra.body.id],
+    });
+    assert.equal(booked.status, 201, JSON.stringify(booked.body));
+    const id = booked.body.id;
+    assert.equal(booked.body.totalAmount, rate * 2 + 10000);
+
+    // Nothing is on the folio yet, but the desk still sees what the stay will cost.
+    let stay = (await mgr.get(`/reservations/${id}`)).body;
+    assert.equal(stay.totals.balance, 0);
+    assert.equal(stay.totals.due, rate * 2 + 10000);
+    assert.equal((await mgr.post(`/reservations/${id}/payments`, { method: 'bank_transfer', amount: 10000, reference: 'Deposit' })).status, 201);
+
+    // Extend by a night: agreed nights keep their price, the extra follows the stay.
+    const extended = await mgr.patch(`/reservations/${id}`, { departure: addDays(today, 3) });
+    assert.equal(extended.status, 200, JSON.stringify(extended.body));
+    const added = extended.body.nightlyRates.at(-1).amount;
+    assert.deepEqual(extended.body.nightlyRates.slice(0, 2).map((n: any) => n.amount), [rate, rate]);
+    assert.equal(extended.body.extrasAmount, 15000);
+    assert.equal(extended.body.totalAmount, rate * 2 + added + 15000);
+    assert.equal((await mgr.patch(`/reservations/${id}`, { arrival: addDays(today, -1) })).status, 422);
+
+    const rooms = (await mgr.get(`/reservations/${id}/free-rooms`)).body;
+    const room = rooms.find((r: any) => r.occupancy === 'vacant' && r.status !== 'dirty');
+    assert.ok(room, 'a vacant clean room is offered');
+    assert.equal((await mgr.post(`/reservations/${id}/check-in`, { roomId: room.id })).status, 200);
+    assert.equal((await mgr.post(`/reservations/${id}/charges`, { category: 'minibar', description: 'Minibar', quantity: 1, unitPrice: 2000 })).status, 201);
+
+    // In-house, the arrival is history; the departure can still move.
+    assert.equal((await mgr.patch(`/reservations/${id}`, { arrival: addDays(today, 1) })).status, 409);
+    assert.equal((await mgr.patch(`/reservations/${id}`, { departure: addDays(today, 2) })).status, 200);
+
+    // The guest leaves after one night: the preview predicts exactly what check-out charges.
+    const preview = (await mgr.get(`/reservations/${id}/check-out-preview`)).body;
+    assert.equal(preview.nightsReleased, 1);
+    assert.equal(preview.departure, addDays(today, 1));
+    const bill = rate + 15000 + 2000;
+    assert.equal(preview.charges, bill);
+    assert.equal(preview.balance, bill - 10000);
+    assert.equal((await mgr.post(`/reservations/${id}/check-out`, {})).body.error.code, 'OUTSTANDING_BALANCE');
+    assert.equal((await mgr.post(`/reservations/${id}/payments`, { method: 'card', amount: preview.balance })).status, 201);
+    const out = await mgr.post(`/reservations/${id}/check-out`, {});
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    assert.equal(out.body.totals.balance, 0);
+
+    // The invoice goes to the company, and the room to housekeeping.
+    const invoice = await mgr.post('/invoices', { propertyId, type: 'invoice', reservationId: id });
+    assert.equal(invoice.status, 201, JSON.stringify(invoice.body));
+    assert.equal(invoice.body.total, bill);
+    assert.equal(invoice.body.status, 'paid');
+    assert.equal(invoice.body.companyId, company.body.id);
+    const after = (await mgr.get(`/rooms?propertyId=${propertyId}`)).body.find((r: any) => r.id === room.id);
+    assert.equal(after.status, 'dirty');
+    assert.equal(after.occupancy, 'vacant');
+    stay = (await mgr.get(`/reservations/${id}`)).body;
+    assert.equal(stay.status, 'checked_out');
+    assert.equal(stay.totals.pending, 0);
+  });
+
   test('housekeeping: supervisors assign, housekeepers only see and finish their own tasks', async () => {
     const lead = await login('hk-lead@demo.test', 'New-password-2026!');
     const board = (await lead.get(`/housekeeping/board?propertyId=${propertyId}`)).body;

@@ -7,7 +7,7 @@ import { PropertyGate } from '@/components/property-gate';
 import { CheckInDialog, CheckOutDialog } from '@/components/stay-dialogs';
 import { Badge, Button, ButtonLink, Card, ErrorText, PageHeader, Spinner, Table, Td, statusTone } from '@/components/ui';
 import { api } from '@/lib/api';
-import { date } from '@/lib/format';
+import { date, money } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
 import type { Property } from '@/lib/types';
@@ -18,6 +18,7 @@ interface Row {
   status: string;
   guestName: string;
   guestSegment?: string;
+  roomId?: string | null;
   roomNumber: string | null;
   roomStatus?: string | null;
   roomTypeCode?: string;
@@ -27,6 +28,7 @@ interface Row {
   children?: number;
   onlineCheckinAt?: string | null;
   estimatedArrival?: string | null;
+  balance?: number | string | null;
 }
 interface FrontDesk {
   date: string;
@@ -106,12 +108,12 @@ function FrontDeskView({ property }: { property: Property }) {
           </Table>
         </Card>
         <Card title={`${t('frontDesk.departures')} (${d.departures.length})`} padded={false}>
-          <Table head={[t('reservations.guest'), t('reservations.room'), t('reservations.departure'), '']} empty={!d.departures.length}>
+          <Table head={[t('reservations.guest'), t('reservations.room'), t('reservations.balance'), '']} empty={!d.departures.length}>
             {d.departures.map((r) => (
               <tr key={r.id}>
                 <Td>{guestCell(r)}</Td>
                 <Td>{r.roomNumber ?? '—'}</Td>
-                <Td>{date(r.departure, locale)}</Td>
+                <Td>{r.balance == null ? '—' : <span className={Number(r.balance) > 0 ? 'font-medium text-warning' : ''}>{money(Number(r.balance), property.currency, locale)}</span>}</Td>
                 <Td className="text-right">
                   {r.status === 'checked_out' ? (
                     <Badge tone="gray">{t('dashboard.departed')}</Badge>
@@ -129,18 +131,25 @@ function FrontDeskView({ property }: { property: Property }) {
         </Card>
       </div>
       <Card title={`${t('frontDesk.inHouse')} (${d.inHouse.length})`} padded={false} className="mt-6">
-        <Table head={[t('reservations.room'), t('reservations.guest'), t('reservations.arrival'), t('reservations.departure')]} empty={!d.inHouse.length}>
+        <Table head={[t('reservations.room'), t('reservations.guest'), t('reservations.arrival'), t('reservations.departure'), '']} empty={!d.inHouse.length}>
           {d.inHouse.map((r) => (
             <tr key={r.id}>
               <Td className="font-semibold">{r.roomNumber ?? '—'}</Td>
               <Td>{guestCell(r)}</Td>
               <Td>{date(r.arrival, locale)}</Td>
               <Td>{date(r.departure, locale)}</Td>
+              <Td className="text-right">
+                {can('frontdesk.checkout') && (
+                  <Button size="sm" variant="ghost" onClick={() => setCheckOut(r)}>
+                    {t('frontDesk.checkOut')}
+                  </Button>
+                )}
+              </Td>
             </tr>
           ))}
         </Table>
       </Card>
-      {checkIn && <CheckInDialog reservationId={checkIn.id} title={`${t('frontDesk.checkIn')} · ${checkIn.guestName}`} onClose={() => setCheckIn(null)} />}
+      {checkIn && <CheckInDialog reservationId={checkIn.id} roomId={checkIn.roomId} title={`${t('frontDesk.checkIn')} · ${checkIn.guestName}`} onClose={() => setCheckIn(null)} />}
       {checkOut && <CheckOutDialog reservationId={checkOut.id} title={`${t('frontDesk.checkOut')} · ${checkOut.guestName}`} onClose={() => setCheckOut(null)} />}
     </>
   );

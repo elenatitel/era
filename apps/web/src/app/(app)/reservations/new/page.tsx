@@ -4,14 +4,15 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Check, Coffee } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { RESERVATION_SOURCES, addDays } from '@pms/shared';
-import { GuestPicker } from '@/components/guest-picker';
+import { RESERVATION_SOURCES, addDays, extraQuantity, parseMoney } from '@pms/shared';
+import { CompanyPicker, GuestPicker } from '@/components/guest-picker';
 import { PropertyGate } from '@/components/property-gate';
-import { Alert, Badge, Button, Card, ErrorText, Field, Input, PageHeader, Select, Spinner, Tabs, Textarea } from '@/components/ui';
+import { Alert, Badge, Button, Card, Checkbox, ErrorText, Field, Input, PageHeader, Select, Spinner, Tabs, Textarea } from '@/components/ui';
 import { api } from '@/lib/api';
 import { money } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
-import type { Guest, Property, RoomType } from '@/lib/types';
+import { useSession } from '@/lib/session';
+import type { Company, Extra, Guest, Property, RoomType } from '@/lib/types';
 
 interface Offer {
   ratePlanId: string;
@@ -28,6 +29,7 @@ interface Availability {
 
 function NewReservation({ property }: { property: Property }) {
   const { t, locale } = useI18n();
+  const { can } = useSession();
   const router = useRouter();
   const [arrival, setArrival] = useState(property.businessDate);
   const [departure, setDeparture] = useState(addDays(property.businessDate, 1));
@@ -41,12 +43,26 @@ function NewReservation({ property }: { property: Property }) {
   const [source, setSource] = useState('direct');
   const [status, setStatus] = useState<'confirmed' | 'tentative'>('confirmed');
   const [notes, setNotes] = useState('');
+  const [company, setCompany] = useState<Company | null>(null);
+  const [extraIds, setExtraIds] = useState<string[]>([]);
+  const [promoCode, setPromoCode] = useState('');
+  const [negotiated, setNegotiated] = useState('');
 
+  const extras = useQuery({
+    queryKey: ['extras', property.id],
+    queryFn: () => api.get<Extra[]>('/extras', { propertyId: property.id }),
+    enabled: can('rates.read'),
+  });
   const avail = useQuery({
     queryKey: ['availability', property.id, search],
     queryFn: () => api.get<Availability>('/availability', { propertyId: property.id, ...search! }),
     enabled: Boolean(search),
   });
+
+  const totalOverride = negotiated.trim() ? parseMoney(negotiated) : null;
+  const nights = avail.data?.nights ?? 0;
+  const chosenExtras = (extras.data ?? []).filter((e) => extraIds.includes(e.id));
+  const extrasTotal = chosenExtras.reduce((s, e) => s + e.price * extraQuantity(e.unit, nights, adults + children), 0);
 
   const create = useMutation({
     mutationFn: () =>
@@ -61,6 +77,10 @@ function NewReservation({ property }: { property: Property }) {
         source,
         status,
         notes: notes || null,
+        companyId: company?.id ?? null,
+        extraIds,
+        promoCode: totalOverride === null ? promoCode || null : null,
+        totalOverride,
         ...(guestMode === 'existing' && guest
           ? { guestId: guest.id }
           : { guest: { ...newGuest, email: newGuest.email || null, phone: newGuest.phone || null } }),
@@ -73,11 +93,11 @@ function NewReservation({ property }: { property: Property }) {
   return (
     <>
       <PageHeader title={t('reservations.new')} eyebrow={property.name} />
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
+      <div className="grid gap-6 xl:grid-cols-3">
+        <div className="space-y-6 xl:col-span-2">
           <Card>
             <form
-              className="grid gap-3 sm:grid-cols-5"
+              className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
               onSubmit={(e) => {
                 e.preventDefault();
                 setChoice(null);
@@ -220,10 +240,40 @@ function NewReservation({ property }: { property: Property }) {
                   )}
                 </Field>
               </div>
+              <Field label={t('reservations.company')}>{() => <CompanyPicker value={company} onChange={setCompany} />}</Field>
+              {extras.data && extras.data.some((e) => e.active) && (
+                <div>
+                  <p className="mb-2 text-sm font-medium">{t('guest.stayExtras')}</p>
+                  <div className="space-y-2">
+                    {extras.data
+                      .filter((e) => e.active)
+                      .map((e) => (
+                        <Checkbox
+                          key={e.id}
+                          label={
+                            <>
+                              {e.name} <span className="text-xs text-muted">{money(e.price, property.currency, locale)}</span>
+                            </>
+                          }
+                          checked={extraIds.includes(e.id)}
+                          onChange={(on) => setExtraIds(on ? [...extraIds, e.id] : extraIds.filter((x) => x !== e.id))}
+                        />
+                      ))}
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <Field label={t('guest.promoCode')}>{(id) => <Input id={id} disabled={totalOverride !== null} value={promoCode} onChange={(e) => setPromoCode(e.target.value.toUpperCase())} />}</Field>
+                {can('rates.manage') && (
+                  <Field label={`${t('reservations.negotiatedPrice')} (${property.currency})`}>
+                    {(id) => <Input id={id} inputMode="decimal" value={negotiated} onChange={(e) => setNegotiated(e.target.value)} />}
+                  </Field>
+                )}
+              </div>
               <Field label={t('common.notes')}>{(id) => <Textarea id={id} value={notes} onChange={(e) => setNotes(e.target.value)} />}</Field>
               {choice && (
                 <Alert tone="blue">
-                  {t('common.total')}: <strong>{money(choice.total, property.currency, locale)}</strong> · {avail.data?.nights} {t('reservations.nights').toLowerCase()}
+                  {t('common.total')}: <strong>{money((totalOverride ?? choice.total) + extrasTotal, property.currency, locale)}</strong> · {nights} {t('reservations.nights').toLowerCase()}
                 </Alert>
               )}
               <ErrorText error={create.error} />
