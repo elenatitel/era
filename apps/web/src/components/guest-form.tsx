@@ -16,6 +16,11 @@ const empty = {
   phone: '',
   nationality: '',
   birthDate: '',
+  birthPlace: '',
+  language: '',
+  occupation: '',
+  taxId: '',
+  carRegistration: '',
   documentType: '',
   documentNumber: '',
   address: '',
@@ -55,6 +60,11 @@ export function GuestForm({ guest, onSaved }: { guest?: Guest; onSaved: (g: Gues
         phone: n(f.phone),
         nationality: n(f.nationality)?.toUpperCase() ?? null,
         birthDate: n(f.birthDate),
+        birthPlace: n(f.birthPlace),
+        language: n(f.language),
+        occupation: n(f.occupation),
+        taxId: n(f.taxId),
+        carRegistration: n(f.carRegistration),
         documentType: n(f.documentType),
         address: n(f.address),
         city: n(f.city),
@@ -114,6 +124,11 @@ export function GuestForm({ guest, onSaved }: { guest?: Guest; onSaved: (g: Gues
           {(id) => <Input id={id} maxLength={2} value={f.nationality} onChange={set('nationality')} />}
         </Field>
         <Field label={t('guests.birthDate')}>{(id) => <Input id={id} type="date" value={f.birthDate} onChange={set('birthDate')} />}</Field>
+        <Field label={t('guests.birthPlace')}>{(id) => <Input id={id} value={f.birthPlace} onChange={set('birthPlace')} />}</Field>
+        <Field label={t('guests.language')}>{(id) => <Input id={id} value={f.language} onChange={set('language')} />}</Field>
+        <Field label={t('guests.occupation')}>{(id) => <Input id={id} value={f.occupation} onChange={set('occupation')} />}</Field>
+        <Field label={t('guests.taxId')}>{(id) => <Input id={id} value={f.taxId} onChange={set('taxId')} />}</Field>
+        <Field label={t('guests.carRegistration')}>{(id) => <Input id={id} value={f.carRegistration} onChange={set('carRegistration')} />}</Field>
         <Field label={t('guests.documentType')}>
           {(id) => (
             <Select id={id} value={f.documentType} onChange={set('documentType')}>

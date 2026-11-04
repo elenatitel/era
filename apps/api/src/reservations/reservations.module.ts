@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   availabilitySchema,
   calendarSchema,
+  calendarYearSchema,
   cancelReservationSchema,
   checkInSchema,
   checkOutSchema,
@@ -37,6 +38,12 @@ export class ReservationsController {
   @Perms('reservations.read')
   calendar(@ZQuery(calendarSchema) q: z.infer<typeof calendarSchema>) {
     return this.svc.calendar(q.propertyId, q.from, q.to);
+  }
+
+  @Get('reservations/calendar/year')
+  @Perms('reservations.read')
+  calendarYear(@ZQuery(calendarYearSchema) q: z.infer<typeof calendarYearSchema>) {
+    return this.svc.calendarYear(q.propertyId, q.year);
   }
 
   @Get('reservations/:id')

@@ -482,6 +482,11 @@ export const guests = pgTable(
     phone: text(),
     nationality: text(),
     birthDate: date(),
+    birthPlace: text(),
+    language: text(),
+    occupation: text(),
+    taxId: text(),
+    carRegistration: text(),
     documentType: text(),
     /** AES-256-GCM encrypted at the application layer. */
     documentNumberEnc: text(),
@@ -493,6 +498,9 @@ export const guests = pgTable(
     tags: text().array().notNull().default(sql`'{}'::text[]`),
     notes: text(),
     marketingConsent: boolean().notNull().default(false),
+    /** AI summary of what the guest told the hotel; staff should check it. */
+    smartTip: text(),
+    smartTipAt: timestamp({ withTimezone: true }),
     anonymizedAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

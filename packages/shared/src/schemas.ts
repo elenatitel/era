@@ -186,6 +186,11 @@ export const guestSchema = z.object({
   phone: optionalText(40),
   nationality: z.string().length(2).toUpperCase().optional().nullable(),
   birthDate: isoDate.optional().nullable(),
+  birthPlace: optionalText(120).optional(),
+  language: optionalText(40).optional(),
+  occupation: optionalText(120).optional(),
+  taxId: optionalText(40).optional(),
+  carRegistration: optionalText(20).optional(),
   documentType: z.enum(DOCUMENT_TYPES).optional().nullable(),
   documentNumber: optionalText(40),
   address: optionalText(300),
@@ -202,6 +207,8 @@ export const guestSearchSchema = pagination.extend({
   q: z.string().trim().max(100).optional(),
   segment: z.enum(GUEST_SEGMENTS).optional(),
 });
+
+export const smartTipSchema = z.object({ locale: z.enum(LOCALES).default('ro') });
 
 export const companySchema = z.object({
   name: trimmed(200),
@@ -273,6 +280,7 @@ export const reservationSearchSchema = pagination.extend({
   q: z.string().trim().max(100).optional(),
 });
 export const calendarSchema = z.object({ propertyId: id, from: isoDate, to: isoDate });
+export const calendarYearSchema = z.object({ propertyId: id, year: z.coerce.number().int().min(2000).max(2100) });
 
 // ---------- folio, payments, invoices ----------
 export const postChargeSchema = z.object({
