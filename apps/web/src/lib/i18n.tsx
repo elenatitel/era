@@ -129,7 +129,7 @@ const en = {
     recoveryLeft: '{n} recovery codes left', logoutAll: 'Sign out of all devices', mfaRequiredBanner: 'Your organization requires two-factor authentication. Enable it to continue.',
   },
   platform: {
-    title: 'Organizations', newTenant: 'New organization', slug: 'Slug', ownerEmail: 'Owner e-mail', ownerName: 'Owner name',
+    title: 'Organizations', newTenant: 'New organization', editTenant: 'Edit organization', slug: 'Slug', ownerEmail: 'Owner e-mail', ownerName: 'Owner name',
     suspend: 'Suspend', activate: 'Activate', sessions: 'Active sessions', created: 'Organization created — the owner received an invitation.',
   },
   perm: {
@@ -370,7 +370,7 @@ const ro: DeepPartial<Dict> = {
     recoveryLeft: '{n} coduri de recuperare rămase', logoutAll: 'Deconectare de pe toate dispozitivele', mfaRequiredBanner: 'Organizația dumneavoastră cere autentificare în doi pași. Activați-o pentru a continua.',
   },
   platform: {
-    title: 'Organizații', newTenant: 'Organizație nouă', slug: 'Identificator', ownerEmail: 'E-mail proprietar', ownerName: 'Nume proprietar',
+    title: 'Organizații', newTenant: 'Organizație nouă', editTenant: 'Editează organizația', slug: 'Identificator', ownerEmail: 'E-mail proprietar', ownerName: 'Nume proprietar',
     suspend: 'Suspendă', activate: 'Activează', sessions: 'Sesiuni active', created: 'Organizație creată — proprietarul a primit invitația.',
   },
   perm: {

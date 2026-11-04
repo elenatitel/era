@@ -77,6 +77,12 @@ export const createTenantSchema = z.object({
   locale: z.enum(LOCALES).default('en'),
 });
 export const updateTenantStatusSchema = z.object({ status: z.enum(['active', 'suspended']) });
+/** Platform edit. The slug stays fixed: the demo seed and public links rely on it. */
+export const updateTenantSchema = z.object({
+  name: trimmed(160).optional(),
+  defaultLocale: z.enum(LOCALES).optional(),
+  properties: z.array(z.object({ id, name: trimmed(160) })).max(200).optional(),
+});
 
 // ---------- tenant settings, users, roles ----------
 export const updateTenantSettingsSchema = z.object({

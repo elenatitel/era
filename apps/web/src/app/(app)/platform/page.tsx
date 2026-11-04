@@ -19,14 +19,58 @@ interface Tenant {
   activeSessions: number;
 }
 
+interface TenantDetail {
+  id: string;
+  name: string;
+  slug: string;
+  defaultLocale: string;
+  properties: { id: string; name: string }[];
+}
+
+/** Rename an organization and its hotels. Keyed by tenant, so it opens with fresh values. */
+function EditTenant({ detail, onClose, onSaved }: { detail: TenantDetail; onClose: () => void; onSaved: () => void }) {
+  const { t } = useI18n();
+  const [f, setF] = useState(detail);
+  const save = useMutation({
+    mutationFn: () => api.patch(`/platform/tenants/${detail.id}`, { name: f.name, defaultLocale: f.defaultLocale, properties: f.properties }),
+    onSuccess: onSaved,
+  });
+  return (
+    <form className="space-y-3" onSubmit={(e) => (e.preventDefault(), save.mutate())}>
+      <ErrorText error={save.error} />
+      <Field label={t('common.name')}>{(id) => <Input id={id} required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />}</Field>
+      <Field label={t('platform.slug')}>{(id) => <Input id={id} disabled value={f.slug} />}</Field>
+      <Field label={t('settings.defaultLocale')}>
+        {(id) => (
+          <Select id={id} value={f.defaultLocale} onChange={(e) => setF({ ...f, defaultLocale: e.target.value })}>
+            <option value="en">English</option>
+            <option value="ro">Română</option>
+          </Select>
+        )}
+      </Field>
+      {f.properties.map((p, i) => (
+        <Field key={p.id} label={`${t('nav.property')} ${f.properties.length > 1 ? i + 1 : ''}`.trim()}>
+          {(id) => <Input id={id} required value={p.name} onChange={(e) => setF({ ...f, properties: f.properties.map((x) => (x.id === p.id ? { ...x, name: e.target.value } : x)) })} />}
+        </Field>
+      ))}
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
+        <Button type="submit" loading={save.isPending}>{t('common.save')}</Button>
+      </div>
+    </form>
+  );
+}
+
 export default function PlatformPage() {
   const { t, locale } = useI18n();
   const { me } = useSession();
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [f, setF] = useState({ name: '', slug: '', ownerEmail: '', ownerName: '', locale: 'en' });
   const list = useQuery({ queryKey: ['platform-tenants'], queryFn: () => api.get<Tenant[]>('/platform/tenants'), enabled: me.user.isPlatformAdmin, retry: false });
+  const detail = useQuery({ queryKey: ['platform-tenant', editing], queryFn: () => api.get<TenantDetail>(`/platform/tenants/${editing}`), enabled: Boolean(editing), gcTime: 0 });
   const create = useMutation({
     mutationFn: () => api.post('/platform/tenants', f),
     onSuccess: () => {
@@ -63,6 +107,7 @@ export default function PlatformPage() {
                   <Td>{tn.activeSessions}</Td>
                   <Td className="text-muted">{dateTime(tn.createdAt, locale)}</Td>
                   <Td className="text-right">
+                    <Button size="sm" variant="ghost" onClick={() => setEditing(tn.id)}>{t('common.edit')}</Button>
                     <Button
                       size="sm"
                       variant={tn.status === 'active' ? 'ghost' : 'secondary'}
@@ -77,6 +122,22 @@ export default function PlatformPage() {
           </Card>
         )
       )}
+      <Modal open={Boolean(editing)} onClose={() => setEditing(null)} title={t('platform.editTenant')}>
+        <ErrorText error={detail.error} />
+        {detail.isLoading && <Spinner />}
+        {detail.data && (
+          <EditTenant
+            key={detail.data.id}
+            detail={detail.data}
+            onClose={() => setEditing(null)}
+            onSaved={() => {
+              setEditing(null);
+              setNotice(t('common.saved'));
+              void qc.invalidateQueries({ queryKey: ['platform-tenants'] });
+            }}
+          />
+        )}
+      </Modal>
       <Modal open={creating} onClose={() => setCreating(false)} title={t('platform.newTenant')}>
         <form className="space-y-3" onSubmit={(e) => (e.preventDefault(), create.mutate())}>
           <ErrorText error={create.error} />
