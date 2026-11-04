@@ -88,7 +88,7 @@ const en = {
   },
   charges: { accommodation: 'Accommodation', food_beverage: 'Food & beverage', minibar: 'Minibar', laundry: 'Laundry', spa: 'Spa', parking: 'Parking', tourist_tax: 'Tourist tax', other: 'Other' },
   methods: { cash: 'Cash', card: 'Card', bank_transfer: 'Bank transfer', voucher: 'Voucher', other: 'Other' },
-  calendar: { title: 'Calendar', unassigned: 'Unassigned', today: 'Today', week: 'Week', fortnight: '2 weeks', month: 'Month', year: 'Year', search: 'Search by name or code', goToDate: 'Go to date', noResults: 'No reservations found', occupancy: 'Occupancy' },
+  calendar: { title: 'Calendar', unassigned: 'Unassigned', today: 'Today', week: 'Week', fortnight: '2 weeks', month: 'Month', year: 'Year', search: 'Name, phone, date (27.11) or code', goToDate: 'Go to date', noResults: 'No reservations found', occupancy: 'Occupancy', openFull: 'Open reservation', paid: 'Paid in full', notInCalendar: 'This reservation is not active, so it is not on the calendar.' },
   housekeeping: {
     title: 'Housekeeping', board: 'Room board', myTasks: 'My tasks', tasks: 'Tasks', generate: 'Generate today\'s tasks',
     assignTo: 'Assign to', unassigned: 'Unassigned', start: 'Start', done: 'Done', inspect: 'Inspect', markClean: 'Mark clean',
@@ -346,7 +346,7 @@ const ro: DeepPartial<Dict> = {
   },
   charges: { accommodation: 'Cazare', food_beverage: 'Restaurant & bar', minibar: 'Minibar', laundry: 'Spălătorie', spa: 'Spa', parking: 'Parcare', tourist_tax: 'Taxă de stațiune', other: 'Altele' },
   methods: { cash: 'Numerar', card: 'Card', bank_transfer: 'Transfer bancar', voucher: 'Voucher', other: 'Altele' },
-  calendar: { title: 'Calendar', unassigned: 'Nealocate', today: 'Azi', week: 'Săptămână', fortnight: '2 săptămâni', month: 'Lună', year: 'An', search: 'Caută după nume sau cod', goToDate: 'Mergi la dată', noResults: 'Nicio rezervare găsită', occupancy: 'Grad de ocupare' },
+  calendar: { title: 'Calendar', unassigned: 'Nealocate', today: 'Azi', week: 'Săptămână', fortnight: '2 săptămâni', month: 'Lună', year: 'An', search: 'Nume, telefon, dată (27.11) sau cod', goToDate: 'Mergi la dată', noResults: 'Nicio rezervare găsită', occupancy: 'Grad de ocupare', openFull: 'Deschide rezervarea', paid: 'Achitat integral', notInCalendar: 'Rezervarea nu e activă, deci nu apare în calendar.' },
   housekeeping: {
     title: 'Housekeeping', board: 'Starea camerelor', myTasks: 'Sarcinile mele', tasks: 'Sarcini', generate: 'Generează sarcinile zilei',
     assignTo: 'Alocă', unassigned: 'Nealocată', start: 'Începe', done: 'Gata', inspect: 'Verifică', markClean: 'Marchează curată',

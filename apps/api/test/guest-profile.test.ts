@@ -122,8 +122,27 @@ test('reservations are found by full name, and the year view counts past stays',
   const mgr = await login('manager@demo.test');
   const [property] = (await mgr.get('/properties')).body as { id: string; businessDate: string }[];
   const q = `propertyId=${property!.id}`;
-  const found = (await mgr.get(`/reservations?${q}&q=${encodeURIComponent('Sophie Martin')}`)).body.items;
-  assert.ok(found.length >= 1, 'full name is found');
+  const find = async (term: string) => (await mgr.get(`/reservations?${q}&q=${encodeURIComponent(term)}`)).body.items as { guestName: string; arrival: string; guestPhone: string }[];
+  const [found] = await find('Sophie Martin');
+  assert.equal(found?.guestName, 'Sophie Martin');
+  await db.superQuery(`UPDATE guests SET phone = '+40 722 555 111' WHERE last_name = 'Martin'`);
+  const [y, m, d] = found!.arrival.split('-');
+  const matches = [
+    'Martin Sophie',
+    'Sophie',
+    '0722555111',
+    '722 555',
+    '+40722555111',
+    `${d}.${m}.${y}`,
+    `${d}.${m}`,
+    `${d}/${m}`,
+    found!.arrival,
+    `Sophie ${d}.${m}`,
+  ];
+  for (const term of matches) assert.ok((await find(term)).some((r) => r.guestName === 'Sophie Martin'), `"${term}" finds the stay`);
+  assert.equal((await find('Sophie')).find((r) => r.guestName === 'Sophie Martin')?.guestPhone, '+40 722 555 111');
+  assert.equal((await find('Sophie 01.01.2001')).length, 0);
+  assert.equal((await find('31.02.2026 Sophie')).length, 0, 'an impossible date is just text');
 
   const year = Number(property!.businessDate.slice(0, 4));
   const res = await mgr.get(`/reservations/calendar/year?${q}&year=${year}`);

@@ -11,6 +11,7 @@ import {
   createReservationSchema,
   extraQuantity,
   nightsBetween,
+  parseSearchDates,
   reservationSearchSchema,
   stayDates,
   todayIn,
@@ -265,26 +266,35 @@ export class ReservationsService {
 
   // ---------------------------------------------------------------- read
 
+  /** One search word: a name, code or e-mail, a phone number however it was typed, or a day of the stay. */
+  private matchesWord(word: string, year: number) {
+    const term = `%${word.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    const digits = /^[+\d().-]+$/.test(word) ? word.replace(/\D/g, '').replace(/^0+/, '') : '';
+    return or(
+      ilike(reservations.code, term),
+      ilike(guests.lastName, term),
+      ilike(guests.firstName, term),
+      ilike(guests.email, term),
+      ilike(guests.phone, term),
+      ilike(reservations.externalRef, term),
+      digits.length >= 3 ? sql`regexp_replace(coalesce(${guests.phone}, ''), ${'\\D'}, '', 'g') like ${`%${digits}%`}` : undefined,
+      ...parseSearchDates(word, year).map((day) => and(lte(reservations.arrival, day), gte(reservations.departure, day))),
+    );
+  }
+
   search(q: z.infer<typeof reservationSearchSchema>) {
     return this.db.tenant(async (tx) => {
       const allowed = allowedPropertyIds();
-      const term = q.q ? `%${q.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+      // Every word must match, in any order: "popescu ana", "ana 27.11", "0722 123 456".
+      const words = q.q?.split(/\s+/).filter(Boolean).slice(0, 6) ?? [];
+      const year = Number(todayIn('Europe/Bucharest').slice(0, 4));
       const where = and(
+        ...words.map((word) => this.matchesWord(word, year)),
         q.propertyId ? eq(reservations.propertyId, q.propertyId) : undefined,
         allowed ? inArray(reservations.propertyId, allowed) : undefined,
         q.status ? eq(reservations.status, q.status) : undefined,
         q.from ? gte(reservations.departure, q.from) : undefined,
         q.to ? lte(reservations.arrival, q.to) : undefined,
-        term
-          ? or(
-              ilike(reservations.code, term),
-              ilike(guests.lastName, term),
-              ilike(guests.firstName, term),
-              ilike(sql`${guests.firstName} || ' ' || ${guests.lastName}`, term),
-              ilike(guests.email, term),
-              ilike(reservations.externalRef, term),
-            )
-          : undefined,
       );
       const items = await tx
         .select({
@@ -301,6 +311,7 @@ export class ReservationsService {
           propertyId: reservations.propertyId,
           guestId: guests.id,
           guestName: sql<string>`${guests.firstName} || ' ' || ${guests.lastName}`,
+          guestPhone: hasPermission('guests.read') ? guests.phone : sql<null>`null`,
           guestSegment: guests.segment,
           roomNumber: rooms.number,
           roomTypeCode: roomTypes.code,

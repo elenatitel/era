@@ -18,7 +18,7 @@ export function CheckInDialog({ reservationId, roomId: assigned, title, onClose 
   const [roomId, setRoomId] = useState(assigned ?? '');
   const [allowDirty, setAllowDirty] = useState(false);
   const m = useMutation({
-    mutationFn: () => api.post(`/reservations/${reservationId}/check-in`, { roomId, allowDirtyRoom: allowDirty }),
+    mutationFn: () => api.post(`/reservations/${reservationId}/check-in`, { roomId: selected!.id, allowDirtyRoom: allowDirty }),
     onSuccess: () => {
       void qc.invalidateQueries();
       onClose();
@@ -26,7 +26,9 @@ export function CheckInDialog({ reservationId, roomId: assigned, title, onClose 
   });
   // A guest still in the room blocks check-in until they leave, even if the room is free from tonight.
   const occupied = (r: Room) => r.occupancy === 'occupied';
-  const selected = rooms.data?.find((r) => r.id === roomId && !occupied(r));
+  // Offers the first ready room, so a plain arrival needs no choosing.
+  const chosen = roomId || rooms.data?.find((r) => !occupied(r) && r.status !== 'dirty')?.id;
+  const selected = rooms.data?.find((r) => r.id === chosen && !occupied(r));
   return (
     <Modal open onClose={onClose} title={title}>
       {rooms.isLoading ? (
