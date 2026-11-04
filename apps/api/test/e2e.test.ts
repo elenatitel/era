@@ -571,6 +571,13 @@ describe('hotel operations', () => {
     assert.equal(room.status, 'inspected');
   });
 
+  test('without an API key the smart tip stays off and nothing is sent', async () => {
+    const mgr = await login('manager@demo.test');
+    const guest = (await mgr.post('/guests', { firstName: 'Off', lastName: 'Switch', notes: 'Likes tea' })).body;
+    assert.equal((await mgr.get(`/guests/${guest.id}`)).body.smartTipEnabled, false);
+    assert.equal((await mgr.post(`/guests/${guest.id}/smart-tip`, {})).body.error.code, 'AI_NOT_CONFIGURED');
+  });
+
   test('GDPR export and anonymization', async () => {
     const owner = await login('owner@demo.test');
     const g = await owner.post('/guests', { firstName: 'Erase', lastName: 'Me', email: 'erase@example.com', documentNumber: 'X999' });

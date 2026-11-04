@@ -77,6 +77,8 @@ spec:
               valueFrom: {secretKeyRef: {name: {{ $secret }}, key: ENCRYPTION_KEY}}
             - name: SMTP_PASSWORD
               valueFrom: {secretKeyRef: {name: {{ $secret }}, key: SMTP_PASSWORD, optional: true}}
+            - name: ANTHROPIC_API_KEY
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: ANTHROPIC_API_KEY, optional: true}}
           startupProbe:
             httpGet: {path: /api/health, port: http}
             periodSeconds: 5

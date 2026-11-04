@@ -1,15 +1,16 @@
 import { Controller, Get, HttpCode, Injectable, Module, Patch, Post } from '@nestjs/common';
 import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { companySchema, guestSchema, guestSearchSchema, pagination, updateCompanySchema, updateGuestSchema } from '@pms/shared';
+import { companySchema, guestSchema, guestSearchSchema, nightsBetween, pagination, smartTipSchema, updateCompanySchema, updateGuestSchema } from '@pms/shared';
 import { hasPermission, requireTenant } from '../common/context.js';
 import { decryptNullable, encryptNullable, mask } from '../common/crypto.js';
-import { invalidState, notFound, unprocessable } from '../common/errors.js';
+import { conflict, invalidState, notFound, unprocessable } from '../common/errors.js';
 import { IdParam, ZBody, ZQuery } from '../common/zod.js';
 import { Perms } from '../auth/decorators.js';
 import { AuditService } from '../db/audit.service.js';
 import { DbService, type Tx } from '../db/db.service.js';
-import { companies, folioItems, guests, invoices, payments, reservations } from '../db/schema.js';
+import { auditLogs, companies, folioItems, guests, invoices, payments, properties, reservations, rooms, roomTypes, users } from '../db/schema.js';
+import { GuestInsightService } from './guest-insight.service.js';
 
 type GuestRow = typeof guests.$inferSelect;
 type GuestInput = z.infer<typeof guestSchema>;
@@ -48,6 +49,7 @@ export class GuestsService {
   constructor(
     private readonly db: DbService,
     private readonly audit: AuditService,
+    private readonly insight: GuestInsightService,
   ) {}
 
   search(q: z.infer<typeof guestSearchSchema>) {
@@ -103,8 +105,13 @@ export class GuestsService {
           departure: reservations.departure,
           totalAmount: reservations.totalAmount,
           currency: reservations.currency,
+          propertyName: properties.name,
+          roomNumber: rooms.number,
+          guestRequests: reservations.guestRequests,
         })
         .from(reservations)
+        .innerJoin(properties, eq(properties.id, reservations.propertyId))
+        .leftJoin(rooms, eq(rooms.id, reservations.roomId))
         .where(eq(reservations.guestId, id))
         .orderBy(desc(reservations.arrival))
         .limit(100);
@@ -113,8 +120,88 @@ export class GuestsService {
         .from(folioItems)
         .innerJoin(reservations, eq(reservations.id, folioItems.reservationId))
         .where(and(eq(reservations.guestId, id), isNull(folioItems.voidedAt)));
+      const stayIds = history.map((h) => h.id);
+      const billing = hasPermission('invoices.read')
+        ? await tx
+            .select({ id: invoices.id, fullNumber: invoices.fullNumber, type: invoices.type, status: invoices.status, issueDate: invoices.issueDate, total: invoices.total, currency: invoices.currency })
+            .from(invoices)
+            .where(or(eq(invoices.guestId, id), stayIds.length ? inArray(invoices.reservationId, stayIds) : undefined))
+            .orderBy(desc(invoices.issueDate))
+            .limit(100)
+        : [];
+      const paid = hasPermission('folio.read') && stayIds.length
+        ? await tx
+            .select({ id: payments.id, method: payments.method, amount: payments.amount, currency: payments.currency, reference: payments.reference, createdAt: payments.createdAt })
+            .from(payments)
+            .where(inArray(payments.reservationId, stayIds))
+            .orderBy(desc(payments.createdAt))
+            .limit(100)
+        : [];
+      // What happened, not the details: audit metadata stays behind audit.read.
+      const activity = await tx
+        .select({ id: auditLogs.id, action: auditLogs.action, createdAt: auditLogs.createdAt, userName: users.name })
+        .from(auditLogs)
+        .leftJoin(users, eq(users.id, auditLogs.userId))
+        .where(
+          and(
+            sql`${auditLogs.action} <> 'guest.pii_viewed'`,
+            or(
+              and(eq(auditLogs.entityType, 'guest'), eq(auditLogs.entityId, id)),
+              stayIds.length ? and(eq(auditLogs.entityType, 'reservation'), inArray(auditLogs.entityId, stayIds)) : undefined,
+            ),
+          ),
+        )
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(50);
       if (hasPermission('guests.pii')) await this.audit.log(tx, 'guest.pii_viewed', 'guest', id);
-      return { ...presentGuest(g), history, lifetimeValue: Number(spent?.total ?? 0) };
+      const stayed = history.filter((h) => h.status === 'checked_out');
+      return {
+        ...presentGuest(g),
+        history,
+        lifetimeValue: Number(spent?.total ?? 0),
+        stats: { stays: stayed.length, nights: stayed.reduce((s, h) => s + nightsBetween(h.arrival, h.departure), 0), lastStay: stayed[0]?.departure ?? null },
+        invoices: billing,
+        payments: paid,
+        activity,
+        smartTipEnabled: this.insight.enabled,
+      };
+    });
+  }
+
+  /**
+   * Refreshes the AI summary. The model runs outside the transaction, so a slow reply never
+   * holds a database connection.
+   */
+  async refreshSmartTip(id: string, locale: 'ro' | 'en') {
+    if (!this.insight.enabled) throw conflict('AI_NOT_CONFIGURED', 'AI summaries are not configured');
+    const source = await this.db.tenant(async (tx) => {
+      const [g] = await tx.select().from(guests).where(eq(guests.id, id));
+      if (!g) throw notFound('Guest');
+      if (g.anonymizedAt) throw invalidState('Anonymized profiles have no summary');
+      const stays = await tx
+        .select({ arrival: reservations.arrival, requests: reservations.guestRequests, notes: reservations.notes, propertyId: reservations.propertyId })
+        .from(reservations)
+        .where(eq(reservations.guestId, id))
+        .orderBy(desc(reservations.arrival))
+        .limit(20);
+      const propertyId = stays[0]?.propertyId;
+      const [hotel] = propertyId ? await tx.select({ name: properties.name }).from(properties).where(eq(properties.id, propertyId)) : [];
+      const types = propertyId ? await tx.select({ name: roomTypes.name }).from(roomTypes).where(eq(roomTypes.propertyId, propertyId)) : [];
+      return { guest: g, stays, hotel: hotel?.name ?? null, roomTypes: types.map((t) => t.name) };
+    });
+    const tip = await this.insight.summarize({
+      names: [source.guest.firstName, source.guest.lastName],
+      notes: source.guest.notes,
+      tags: source.guest.tags,
+      stays: source.stays,
+      hotel: source.hotel,
+      roomTypes: source.roomTypes,
+      locale,
+    });
+    return this.db.tenant(async (tx) => {
+      const [g] = await tx.update(guests).set({ smartTip: tip, smartTipAt: tip ? new Date() : null }).where(eq(guests.id, id)).returning({ smartTip: guests.smartTip, smartTipAt: guests.smartTipAt });
+      await this.audit.log(tx, 'guest.smart_tip_generated', 'guest', id);
+      return g!;
     });
   }
 
@@ -185,6 +272,13 @@ export class GuestsService {
           email: null,
           phone: null,
           birthDate: null,
+          birthPlace: null,
+          language: null,
+          occupation: null,
+          taxId: null,
+          carRegistration: null,
+          smartTip: null,
+          smartTipAt: null,
           documentType: null,
           documentNumberEnc: null,
           address: null,
@@ -196,7 +290,7 @@ export class GuestsService {
           anonymizedAt: new Date(),
         })
         .where(eq(guests.id, id));
-      await tx.update(reservations).set({ notes: null }).where(eq(reservations.guestId, id));
+      await tx.update(reservations).set({ notes: null, guestRequests: null }).where(eq(reservations.guestId, id));
       await this.audit.log(tx, 'guest.anonymized', 'guest', id);
     });
   }
@@ -266,6 +360,13 @@ export class GuestsController {
     return this.svc.update(id, body);
   }
 
+  @Post('guests/:id/smart-tip')
+  @Perms('guests.manage')
+  @HttpCode(200)
+  smartTip(@IdParam() id: string, @ZBody(smartTipSchema) body: z.infer<typeof smartTipSchema>) {
+    return this.svc.refreshSmartTip(id, body.locale);
+  }
+
   @Get('guests/:id/gdpr-export')
   @Perms('guests.gdpr')
   export(@IdParam() id: string) {
@@ -298,5 +399,5 @@ export class GuestsController {
   }
 }
 
-@Module({ controllers: [GuestsController], providers: [GuestsService], exports: [GuestsService] })
+@Module({ controllers: [GuestsController], providers: [GuestsService, GuestInsightService], exports: [GuestsService] })
 export class GuestsModule {}

@@ -280,6 +280,7 @@ export class ReservationsService {
               ilike(reservations.code, term),
               ilike(guests.lastName, term),
               ilike(guests.firstName, term),
+              ilike(sql`${guests.firstName} || ' ' || ${guests.lastName}`, term),
               ilike(guests.email, term),
               ilike(reservations.externalRef, term),
             )
@@ -673,6 +674,24 @@ export class ReservationsService {
           ),
         );
       return { from, to, rooms: roomList, reservations: bookings };
+    });
+  }
+
+  /** Rooms sold per day of a year, for the year overview. Past stays count too. */
+  calendarYear(propertyId: string, year: number) {
+    return this.db.tenant(async (tx) => {
+      await getAccessibleProperty(tx, propertyId);
+      const [total] = await tx
+        .select({ n: count() })
+        .from(rooms)
+        .where(and(eq(rooms.propertyId, propertyId), eq(rooms.active, true), sql`${rooms.status} <> 'out_of_order'`));
+      const rows = await tx.execute<{ date: string; sold: number }>(sql`
+        select to_char(d, 'YYYY-MM-DD') as date, count(r.id)::int as sold
+        from generate_series(${`${year}-01-01`}::date, ${`${year}-12-31`}::date, interval '1 day') d
+        left join ${reservations} r on r.property_id = ${propertyId} and r.arrival <= d::date and r.departure > d::date
+          and r.status in ('tentative', 'confirmed', 'checked_in', 'checked_out')
+        group by d order by d`);
+      return { year, rooms: total?.n ?? 0, days: rows.rows };
     });
   }
 

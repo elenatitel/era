@@ -42,6 +42,11 @@ const schema = z.object({
   PLATFORM_ADMIN_REQUIRE_MFA: bool.default(true),
   /** Minutes an unpaid online booking holds its room. */
   BOOKING_HOLD_MINUTES: z.coerce.number().int().min(5).max(120).default(30),
+  /** Turns on AI summaries of guest profiles. Without it the feature stays off and nothing leaves the system. */
+  ANTHROPIC_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().default('claude-opus-5-5'),
+  /** Testing only: send Claude API calls to a local fake. Ignored in production. */
+  ANTHROPIC_API_BASE: z.url().optional(),
   /** Testing only: send Stripe API calls to a local fake (e.g. http://127.0.0.1:12111). Ignored in production. */
   STRIPE_API_BASE: z.url().optional(),
   LOG_LEVEL: z.enum(['error', 'warn', 'log', 'debug', 'verbose']).default('log'),

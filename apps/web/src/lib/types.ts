@@ -115,6 +115,13 @@ export interface Guest {
   phone: string | null;
   nationality: string | null;
   birthDate: string | null;
+  birthPlace: string | null;
+  language: string | null;
+  occupation: string | null;
+  taxId: string | null;
+  carRegistration: string | null;
+  smartTip: string | null;
+  smartTipAt: string | null;
   documentType: string | null;
   documentNumber: string | null;
   address: string | null;

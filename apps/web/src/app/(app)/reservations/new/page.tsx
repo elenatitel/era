@@ -2,8 +2,8 @@
 
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Check, Coffee } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useState } from 'react';
 import { RESERVATION_SOURCES, addDays, extraQuantity, parseMoney } from '@pms/shared';
 import { CompanyPicker, GuestPicker } from '@/components/guest-picker';
 import { PropertyGate } from '@/components/property-gate';
@@ -29,13 +29,16 @@ interface Availability {
 
 function NewReservation({ property }: { property: Property }) {
   const { t, locale } = useI18n();
-  const { can } = useSession();
+  const { can, properties, setPropertyId } = useSession();
   const router = useRouter();
-  const [arrival, setArrival] = useState(property.businessDate);
-  const [departure, setDeparture] = useState(addDays(property.businessDate, 1));
+  // The calendar links here with the day that was clicked.
+  const picked = useSearchParams().get('arrival');
+  const startDay = picked && /^\d{4}-\d{2}-\d{2}$/.test(picked) && picked >= property.businessDate ? picked : null;
+  const [arrival, setArrival] = useState(startDay ?? property.businessDate);
+  const [departure, setDeparture] = useState(addDays(startDay ?? property.businessDate, 1));
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
-  const [search, setSearch] = useState<{ arrival: string; departure: string; adults: number } | null>(null);
+  const [search, setSearch] = useState<{ arrival: string; departure: string; adults: number } | null>(startDay ? { arrival: startDay, departure: addDays(startDay, 1), adults: 2 } : null);
   const [choice, setChoice] = useState<{ roomTypeId: string; ratePlanId: string; total: number } | null>(null);
   const [guestMode, setGuestMode] = useState<'existing' | 'new'>('new');
   const [guest, setGuest] = useState<Guest | null>(null);
@@ -96,6 +99,19 @@ function NewReservation({ property }: { property: Property }) {
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
           <Card>
+            {properties.length > 1 && (
+              <Field label={t('nav.property')} className="mb-3">
+                {(id) => (
+                  <Select id={id} value={property.id} onChange={(e) => setPropertyId(e.target.value)}>
+                    {properties.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            )}
             <form
               className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
               onSubmit={(e) => {
@@ -289,5 +305,9 @@ function NewReservation({ property }: { property: Property }) {
 }
 
 export default function NewReservationPage() {
-  return <PropertyGate perms={['reservations.create']}>{(p) => <NewReservation property={p} />}</PropertyGate>;
+  return (
+    <Suspense>
+      <PropertyGate perms={['reservations.create']}>{(p) => <NewReservation key={p.id} property={p} />}</PropertyGate>
+    </Suspense>
+  );
 }
