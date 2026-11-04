@@ -1,9 +1,9 @@
 {
-  "id": 41878762935,
-  "run_number": 29,
+  "id": 41900131760,
+  "run_number": 31,
   "run_attempt": 1,
-  "head_sha": "3a10bef097c8b36a2e2412d31dcf216c20efe6a5",
+  "head_sha": "d97e19b58c721600478e71e2c0e82c75847e74ba",
   "head_branch": "feature/calendar-drag-drop",
-  "html_url": "https://github.com/elenatitel/era/actions/runs/41878762935",
-  "version": "0.1.0-ci.29.1"
+  "html_url": "https://github.com/elenatitel/era/actions/runs/41900131760",
+  "version": "0.1.0-ci.31.1"
 }
