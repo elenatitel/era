@@ -1,9 +1,9 @@
 {
-  "id": 41729155138,
-  "run_number": 19,
+  "id": 41811392624,
+  "run_number": 21,
   "run_attempt": 1,
-  "head_sha": "f9ac0065b0e130a8298440cd55341e715bc47576",
-  "head_branch": "fix/home-assistant-ipv4-validation",
-  "html_url": "https://github.com/elenatitel/era/actions/runs/41729155138",
-  "version": "0.1.0-ci.19.1"
+  "head_sha": "07b3bc1031d8074ee8b2d1b789517e5982b742b8",
+  "head_branch": "feature/platform-edit-organizations",
+  "html_url": "https://github.com/elenatitel/era/actions/runs/41811392624",
+  "version": "0.1.0-ci.21.1"
 }
