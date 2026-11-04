@@ -1,6 +1,6 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import type { INestApplication } from '@nestjs/common';
 import { addDays } from '@pms/shared';
@@ -208,6 +208,28 @@ describe('platform administration and tenant isolation', () => {
     const replay = await (await client()).post('/auth/login/mfa', { mfaToken: again.body.mfaToken, code });
     assert.equal(replay.status, 401);
     admin = c;
+  });
+
+  test('platform admins rename an organization and its hotels, but nothing else', async () => {
+    const tenants = (await admin.get('/platform/tenants')).body as { id: string; slug: string }[];
+    const demo = tenants.find((t) => t.slug === 'demo')!;
+    const detail = (await admin.get(`/platform/tenants/${demo.id}`)).body;
+    assert.deepEqual(Object.keys(detail.properties[0]).sort(), ['id', 'name']);
+    const original = { name: detail.name, property: detail.properties[0] };
+
+    const saved = await admin.patch(`/platform/tenants/${demo.id}`, { name: 'Renamed Org', properties: [{ id: original.property.id, name: 'Renamed Hotel' }] });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.name, 'Renamed Org');
+    assert.equal(saved.body.slug, 'demo');
+    assert.equal(saved.body.properties[0].name, 'Renamed Hotel');
+
+    const slug = await admin.patch(`/platform/tenants/${demo.id}`, { slug: 'other', name: 'Renamed Org' });
+    assert.equal(slug.body.slug, 'demo');
+    assert.equal((await admin.patch(`/platform/tenants/${demo.id}`, { properties: [{ id: randomUUID(), name: 'Nope' }] })).status, 404);
+    assert.equal((await (await login('owner@demo.test')).get(`/platform/tenants/${demo.id}`)).status, 403);
+
+    const restored = await admin.patch(`/platform/tenants/${demo.id}`, { name: original.name, properties: [original.property] });
+    assert.equal(restored.body.properties[0].name, original.property.name);
   });
 
   test('non-admins cannot reach platform routes', async () => {

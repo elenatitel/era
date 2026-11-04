@@ -1,14 +1,14 @@
 import { Controller, Get, HttpCode, Injectable, Module, Patch, Post } from '@nestjs/common';
-import { desc, eq, sql } from 'drizzle-orm';
+import { asc, desc, eq, sql } from 'drizzle-orm';
 import { ROLE_TEMPLATES } from '@pms/shared';
 import { randomToken, sha256 } from '../common/crypto.js';
 import { conflict, notFound } from '../common/errors.js';
 import { IdParam, ZBody } from '../common/zod.js';
-import { createTenantSchema, updateTenantStatusSchema } from '@pms/shared';
+import { createTenantSchema, updateTenantSchema, updateTenantStatusSchema } from '@pms/shared';
 import { PlatformAdmin } from '../auth/decorators.js';
 import { AuditService } from '../db/audit.service.js';
 import { DbService, type Tx } from '../db/db.service.js';
-import { invitations, roles, sessions, tenants } from '../db/schema.js';
+import { invitations, properties, roles, sessions, tenants } from '../db/schema.js';
 import { MailService } from '../mail/mail.service.js';
 import { ctx } from '../common/context.js';
 
@@ -30,6 +30,8 @@ export async function seedTenantRoles(tx: Tx, tenantId: string) {
     )
     .returning();
 }
+
+type TenantUpdate = { name?: string; defaultLocale?: 'ro' | 'en'; properties?: { id: string; name: string }[] };
 
 @Injectable()
 export class PlatformService {
@@ -53,6 +55,33 @@ export class PlatformService {
       })
       .from(tenants)
       .orderBy(desc(tenants.createdAt));
+  }
+
+  /** Names only: everything else a property holds stays behind the organization's own roles. */
+  async get(id: string) {
+    const [tenant] = await this.db.db
+      .select({ id: tenants.id, name: tenants.name, slug: tenants.slug, defaultLocale: tenants.defaultLocale })
+      .from(tenants)
+      .where(eq(tenants.id, id));
+    if (!tenant) throw notFound('Organization');
+    const rows = await this.db.tenant((tx) => tx.select({ id: properties.id, name: properties.name }).from(properties).orderBy(asc(properties.name)), id);
+    return { ...tenant, properties: rows };
+  }
+
+  async update(id: string, input: TenantUpdate) {
+    const { properties: hotels, ...fields } = input;
+    const [existing] = await this.db.db.select({ id: tenants.id }).from(tenants).where(eq(tenants.id, id));
+    if (!existing) throw notFound('Organization');
+    // RLS scopes the updates to this organization, so another organization's property is not found.
+    await this.db.tenant(async (tx) => {
+      if (Object.keys(fields).length) await tx.update(tenants).set(fields).where(eq(tenants.id, id));
+      for (const hotel of hotels ?? []) {
+        const [updated] = await tx.update(properties).set({ name: hotel.name }).where(eq(properties.id, hotel.id)).returning({ id: properties.id });
+        if (!updated) throw notFound('Property');
+      }
+    }, id);
+    await this.audit.security('tenant_updated', { tenantId: id, metadata: { fields: Object.keys(fields), properties: hotels?.map((h) => h.id) ?? [] } });
+    return this.get(id);
   }
 
   async create(input: { name: string; slug: string; ownerEmail: string; ownerName: string; locale: 'ro' | 'en' }) {
@@ -101,6 +130,17 @@ export class PlatformController {
   @Post()
   create(@ZBody(createTenantSchema) body: { name: string; slug: string; ownerEmail: string; ownerName: string; locale: 'ro' | 'en' }) {
     return this.platform.create(body);
+  }
+
+  @Get(':id')
+  get(@IdParam() id: string) {
+    return this.platform.get(id);
+  }
+
+  @Patch(':id')
+  @HttpCode(200)
+  update(@IdParam() id: string, @ZBody(updateTenantSchema) body: TenantUpdate) {
+    return this.platform.update(id, body);
   }
 
   @Patch(':id/status')
