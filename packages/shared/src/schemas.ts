@@ -266,9 +266,11 @@ export const updateReservationSchema = z.object({
   adults: z.int().min(1).max(20).optional(),
   children: z.int().min(0).max(20).optional(),
   companyId: id.optional().nullable(),
-  notes: optionalText(2000),
+  // Without the outer optional, a change that omits notes would erase them.
+  notes: optionalText(2000).optional(),
   status: z.enum(['tentative', 'confirmed']).optional(),
 });
+export const moveReservationSchema = updateReservationSchema.pick({ arrival: true, departure: true, roomId: true });
 export const cancelReservationSchema = z.object({ reason: optionalText(500) });
 export const checkInSchema = z.object({ roomId: id, allowDirtyRoom: z.boolean().default(false) });
 export const checkOutSchema = z.object({ allowOpenBalance: z.boolean().default(false) });

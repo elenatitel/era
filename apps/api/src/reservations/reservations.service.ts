@@ -15,6 +15,7 @@ import {
   reservationSearchSchema,
   stayDates,
   todayIn,
+  moveReservationSchema,
   updateReservationSchema,
 } from '@pms/shared';
 import { allowedPropertyIds, ctx, hasPermission, requireTenant } from '../common/context.js';
@@ -399,33 +400,58 @@ export class ReservationsService {
   update(id: string, input: z.infer<typeof updateReservationSchema>) {
     return this.db.tenant(async (tx) => {
       const { reservation, property } = await this.load(tx, id, true);
-      if (!['tentative', 'confirmed', 'checked_in'].includes(reservation.status)) {
-        throw invalidState('Only active reservations can be modified');
-      }
-      if (input.status && reservation.status === 'checked_in') throw invalidState('Guest is already checked in');
-      if (input.roomId !== undefined && reservation.status === 'checked_in') {
-        throw invalidState('Use a room move for in-house guests');
-      }
-      if (input.roomId) await this.assertRoomForType(tx, input.roomId, reservation.roomTypeId);
-      await assertCompany(tx, input.companyId);
-      const [rt] = await tx.select().from(roomTypes).where(eq(roomTypes.id, reservation.roomTypeId));
-      const adults = input.adults ?? reservation.adults;
-      const children = input.children ?? reservation.children;
-      if (adults + children > rt!.maxOccupancy) throw unprocessable(`This room type allows at most ${rt!.maxOccupancy} guests`);
-      const stay = await this.repriceStay(tx, reservation, property, rt!, input.arrival ?? reservation.arrival, input.departure ?? reservation.departure, adults + children);
+      const stay = await this.planChange(tx, reservation, property, input);
       const [updated] = await tx.update(reservations).set({ ...input, ...stay }).where(eq(reservations.id, id)).returning();
       await this.audit.log(tx, 'reservation.updated', 'reservation', id, { ...input, total: stay.totalAmount, previousTotal: reservation.totalAmount });
       return updated;
     });
   }
 
+  /** What a move on the calendar would change, so the desk sees the new price before committing to it. */
+  previewMove(id: string, input: z.infer<typeof moveReservationSchema>) {
+    return this.db.tenant(async (tx) => {
+      const { reservation, property } = await this.load(tx, id, true);
+      const stay = await this.planChange(tx, reservation, property, input);
+      const roomId = input.roomId === undefined ? reservation.roomId : input.roomId;
+      const ids = [reservation.roomId, roomId].filter((v): v is string => Boolean(v));
+      const numbers = new Map((await tx.select({ id: rooms.id, number: rooms.number }).from(rooms).where(inArray(rooms.id, ids))).map((r) => [r.id, r.number]));
+      const roomNumber = (room: string | null) => (room ? (numbers.get(room) ?? null) : null);
+      return {
+        currency: reservation.currency,
+        source: reservation.source,
+        before: { arrival: reservation.arrival, departure: reservation.departure, roomNumber: roomNumber(reservation.roomId), total: reservation.totalAmount },
+        after: { arrival: input.arrival ?? reservation.arrival, departure: input.departure ?? reservation.departure, roomNumber: roomNumber(roomId), total: stay.totalAmount },
+      };
+    });
+  }
+
+  /** Checks a change against the rules and prices it; the caller decides whether to save it. */
+  private async planChange(tx: Tx, reservation: Reservation, property: Property, input: z.infer<typeof updateReservationSchema>) {
+    if (!['tentative', 'confirmed', 'checked_in'].includes(reservation.status)) {
+      throw invalidState('Only active reservations can be modified');
+    }
+    if (input.status && reservation.status === 'checked_in') throw invalidState('Guest is already checked in');
+    if (input.roomId !== undefined && reservation.status === 'checked_in') {
+      throw invalidState('Use a room move for in-house guests');
+    }
+    if (input.roomId) await this.assertRoomForType(tx, input.roomId, reservation.roomTypeId);
+    await assertCompany(tx, input.companyId);
+    const [rt] = await tx.select().from(roomTypes).where(eq(roomTypes.id, reservation.roomTypeId));
+    const adults = input.adults ?? reservation.adults;
+    const children = input.children ?? reservation.children;
+    if (adults + children > rt!.maxOccupancy) throw unprocessable(`This room type allows at most ${rt!.maxOccupancy} guests`);
+    const roomId = input.roomId === undefined ? reservation.roomId : input.roomId;
+    return this.repriceStay(tx, reservation, property, rt!, input.arrival ?? reservation.arrival, input.departure ?? reservation.departure, adults + children, roomId);
+  }
+
   /**
    * Prices a changed stay. Nights that stay keep their agreed price (promo or negotiated);
    * only added nights take the current rate. Extras follow the stay until they reach the folio.
    */
-  private async repriceStay(tx: Tx, r: Reservation, property: Property, rt: RoomType, arrival: string, departure: string, guestCount: number) {
+  private async repriceStay(tx: Tx, r: Reservation, property: Property, rt: RoomType, arrival: string, departure: string, guestCount: number, roomId: string | null) {
     let nightlyRates = r.nightlyRates;
-    if (arrival !== r.arrival || departure !== r.departure) {
+    const datesChanged = arrival !== r.arrival || departure !== r.departure;
+    if (datesChanged) {
       const inHouse = r.status === 'checked_in';
       if (departure <= arrival) throw unprocessable('Departure must be after arrival');
       const nights = nightsBetween(arrival, departure);
@@ -443,13 +469,14 @@ export class ReservationsService {
       if (sold.length) {
         throw conflict(ERROR_CODES.NO_AVAILABILITY, 'No rooms of this type are available for the selected dates', { dates: sold.map((row) => row.date) });
       }
-      if (r.roomId && !(await freeRooms(tx, rt.id, arrival, departure, r.id)).some((room) => room.id === r.roomId)) {
-        throw conflict(ERROR_CODES.ROOM_CONFLICT, 'The assigned room is taken on the new dates');
-      }
       const qt = await quote(tx, rt, plan!, arrival, departure);
       const closed = qt.closedDates.filter((d) => added.has(d));
       if (closed.length) throw conflict(ERROR_CODES.NO_AVAILABILITY, 'Sales are closed on some of the selected dates', { closedDates: closed });
       nightlyRates = qt.nightlyRates.map((n) => ({ date: n.date, amount: agreed.get(n.date) ?? n.amount }));
+    }
+    // The room the stay ends up in, which is not always the one it holds now.
+    if (roomId && (datesChanged || roomId !== r.roomId) && !(await freeRooms(tx, rt.id, arrival, departure, r.id)).some((room) => room.id === roomId)) {
+      throw conflict(ERROR_CODES.ROOM_CONFLICT, 'The assigned room is taken on the new dates');
     }
     const bookedExtras = r.extrasPostedAt
       ? r.extras
