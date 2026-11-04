@@ -1,9 +1,9 @@
 {
-  "id": 41811392624,
-  "run_number": 21,
+  "id": 41822739894,
+  "run_number": 23,
   "run_attempt": 1,
-  "head_sha": "07b3bc1031d8074ee8b2d1b789517e5982b742b8",
-  "head_branch": "feature/platform-edit-organizations",
-  "html_url": "https://github.com/elenatitel/era/actions/runs/41811392624",
-  "version": "0.1.0-ci.21.1"
+  "head_sha": "4339f05387fbf81b4f4e0304a40f486269de1592",
+  "head_branch": "feature/direct-booking-e2e",
+  "html_url": "https://github.com/elenatitel/era/actions/runs/41822739894",
+  "version": "0.1.0-ci.23.1"
 }
