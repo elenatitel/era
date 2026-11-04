@@ -41,13 +41,13 @@ after(async () => {
   await db?.stop();
 });
 
-async function setup() {
+async function setup(offset = 40) {
   const mgr = await new Client(base, ORIGIN).init();
   assert.equal((await mgr.post('/auth/login', { email: 'manager@demo.test', password: DEMO_PASSWORD })).status, 200);
   const [property] = (await mgr.get('/properties')).body as { id: string; businessDate: string }[];
   const today = property!.businessDate;
-  const search = (await mgr.get(`/availability?propertyId=${property!.id}&arrival=${addDays(today, 40)}&departure=${addDays(today, 42)}&adults=2`)).body;
-  const offer = search.roomTypes.find((t: any) => t.available > 1 && t.fitsOccupancy && t.offers.some((o: any) => o.sellable));
+  const search = (await mgr.get(`/availability?propertyId=${property!.id}&arrival=${addDays(today, offset)}&departure=${addDays(today, offset + 2)}&adults=2`)).body;
+  const offer = search.roomTypes.find((t: any) => t.available > 2 && t.fitsOccupancy && t.offers.some((o: any) => o.sellable));
   const plan = offer.offers.find((o: any) => o.sellable);
   const rooms = ((await mgr.get(`/rooms?propertyId=${property!.id}`)).body as { id: string; number: string; roomTypeId: string }[]).filter((r) => r.roomTypeId === offer.roomType.id);
   const book = async (arrival: string, departure: string, roomId: string | null, notes?: string) => {
@@ -116,4 +116,44 @@ test('moves need permission to change reservations', async () => {
   const hk = await new Client(base, ORIGIN).init();
   assert.equal((await hk.post('/auth/login', { email: 'housekeeper@demo.test', password: DEMO_PASSWORD })).status, 200);
   assert.equal((await hk.post(`/reservations/${stay.id}/move-preview`, { arrival: addDays(today, 51), departure: addDays(today, 52) })).status, 403);
+});
+
+test('an in-house guest moves to a free room, and the old room goes to housekeeping', async () => {
+  const { mgr, today, book } = await setup(0);
+  const until = addDays(today, 2);
+  const guest = await book(today, until, null);
+  const neighbour = await book(today, until, null);
+  const free = (await mgr.get(`/reservations/${guest.id}/free-rooms`)).body as { id: string; number: string }[];
+  const [from, to, taken] = free;
+  assert.ok(taken, 'needs three free rooms');
+  const ids = `'${from!.id}', '${to!.id}', '${taken!.id}'`;
+  await db.superQuery(`UPDATE rooms SET status = 'clean', occupancy = 'vacant' WHERE id IN (${ids})`);
+  assert.equal((await mgr.post(`/reservations/${guest.id}/check-in`, { roomId: from!.id })).status, 200);
+  assert.equal((await mgr.post(`/reservations/${neighbour.id}/check-in`, { roomId: taken!.id })).status, 200);
+
+  assert.equal((await mgr.patch(`/reservations/${guest.id}`, { roomId: null })).status, 409);
+  const occupied = await mgr.post(`/reservations/${guest.id}/move-preview`, { roomId: taken!.id });
+  assert.equal(occupied.status, 409);
+  assert.equal(occupied.body.error.code, 'ROOM_CONFLICT');
+
+  await db.superQuery(`UPDATE rooms SET status = 'dirty' WHERE id = '${to!.id}'`);
+  const preview = await mgr.post(`/reservations/${guest.id}/move-preview`, { roomId: to!.id });
+  assert.equal(preview.status, 200, JSON.stringify(preview.body));
+  assert.deepEqual([preview.body.guestMoves, preview.body.roomNotReady, preview.body.needsNewDoorPin], [true, true, false]);
+  await db.superQuery(`INSERT INTO door_grants (tenant_id, reservation_id, room_id, pin_mac) SELECT tenant_id, id, room_id, 'test' FROM reservations WHERE id = '${guest.id}'`);
+  assert.equal((await mgr.post(`/reservations/${guest.id}/move-preview`, { roomId: to!.id })).body.needsNewDoorPin, true);
+  const notReady = await mgr.patch(`/reservations/${guest.id}`, { roomId: to!.id });
+  assert.equal(notReady.status, 409);
+  assert.equal(notReady.body.error.code, 'ROOM_NOT_READY');
+
+  const moved = await mgr.patch(`/reservations/${guest.id}`, { roomId: to!.id, allowDirtyRoom: true });
+  assert.equal(moved.status, 200, JSON.stringify(moved.body));
+  assert.equal(moved.body.roomId, to!.id);
+  assert.equal(moved.body.status, 'checked_in');
+  const state = await db.superQuery<{ id: string; occupancy: string; status: string }>(`SELECT id, occupancy, status FROM rooms WHERE id IN (${ids})`);
+  const room = (id: string) => state.find((r) => r.id === id)!;
+  assert.deepEqual([room(from!.id).occupancy, room(from!.id).status], ['vacant', 'dirty']);
+  assert.equal(room(to!.id).occupancy, 'occupied');
+  const [tasks] = await db.superQuery<{ n: number }>(`SELECT count(*)::int AS n FROM housekeeping_tasks WHERE room_id = '${from!.id}' AND type = 'checkout_clean' AND date = '${today}'`);
+  assert.equal(tasks!.n, 1);
 });

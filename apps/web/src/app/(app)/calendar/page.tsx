@@ -140,18 +140,20 @@ function Timeline({ property, start, length, selected, scrollTo, onSelect }: { p
     const arrival = part === 'end' ? b.arrival : addDays(b.arrival, n);
     const departure = part === 'start' ? b.departure : addDays(b.departure, n);
     const row = rows.find((r) => r.key === d.rowKey)!;
-    const taken = row.roomId && q.data!.reservations.some((r) => r.id !== b.id && r.roomId === row.roomId && r.arrival < departure && r.departure > arrival);
+    const taken = row.roomId && q.data!.reservations.some((r) => r.id !== b.id && r.status !== 'checked_out' && r.roomId === row.roomId && r.arrival < departure && r.departure > arrival);
     const room = q.data!.rooms.find((r) => r.id === row.roomId);
     const problem =
       row.roomTypeId !== b.roomTypeId
         ? 'calendar.dropOtherType'
-        : room?.status === 'out_of_order'
-          ? 'calendar.dropOutOfOrder'
-          : (inHouse(b) ? departure <= property.businessDate : arrival < property.businessDate)
-            ? 'calendar.dropPast'
-            : taken
-              ? 'calendar.dropTaken'
-              : null;
+        : inHouse(b) && !row.roomId
+          ? 'calendar.dropNeedsRoom'
+          : room?.status === 'out_of_order'
+            ? 'calendar.dropOutOfOrder'
+            : (inHouse(b) ? departure !== b.departure && departure <= property.businessDate : arrival < property.businessDate)
+              ? 'calendar.dropPast'
+              : taken
+                ? 'calendar.dropTaken'
+                : null;
     return { arrival, departure, row, problem };
   };
 
@@ -159,7 +161,6 @@ function Timeline({ property, start, length, selected, scrollTo, onSelect }: { p
     justDragged.current = false;
     if (e.button !== 0 || e.pointerType === 'touch' || e.metaKey || e.ctrlKey || e.shiftKey || !canDrag(b)) return;
     const part = ((e.target as HTMLElement).dataset.edge ?? 'move') as Drag['part'];
-    if (inHouse(b) && part !== 'end') return;
     const track = e.currentTarget.closest<HTMLElement>('[data-row]')!;
     e.currentTarget.setPointerCapture(e.pointerId);
     setDrag({ booking: b, part, fromX: e.clientX, dayWidth: track.offsetWidth / length, days: 0, rowKey, x: e.clientX, y: e.clientY, moved: false });
@@ -170,7 +171,8 @@ function Timeline({ property, start, length, selected, scrollTo, onSelect }: { p
     const dx = e.clientX - drag.fromX;
     if (!drag.moved && Math.abs(dx) < 5 && Math.abs(e.clientY - drag.y) < 5) return;
     const nights = nightsBetween(drag.booking.arrival, drag.booking.departure);
-    const n = Math.round(dx / drag.dayWidth);
+    // An in-house guest has already arrived: the whole stay can change rooms, but not dates.
+    const n = inHouse(drag.booking) && drag.part === 'move' ? 0 : Math.round(dx / drag.dayWidth);
     const over = drag.part === 'move' ? document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-row]')?.dataset.row : undefined;
     setDrag({
       ...drag,
@@ -266,7 +268,7 @@ function Timeline({ property, start, length, selected, scrollTo, onSelect }: { p
                             title={`${b.guestName} · ${b.code} · ${date(b.arrival, locale)} – ${date(b.departure, locale)}`}
                             className={clsx(
                               'pointer-events-auto absolute truncate rounded-sm px-2 text-xs leading-7 font-medium select-none hover:brightness-95',
-                              canDrag(b) && !inHouse(b) && 'cursor-grab active:cursor-grabbing',
+                              canDrag(b) && 'cursor-grab active:cursor-grabbing',
                               held?.drag.booking.id === b.id && 'opacity-40',
                               b.id === selected ? 'z-10 bg-orange-500 text-white shadow-md ring-2 ring-orange-300' : (barColor[b.status] ?? 'bg-subtle text-muted'),
                             )}

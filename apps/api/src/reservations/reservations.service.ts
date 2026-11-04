@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
-import { aliasedTable, and, asc, count, desc, eq, gt, gte, ilike, inArray, lt, lte, or, sql } from 'drizzle-orm';
+import { aliasedTable, and, asc, count, desc, eq, gt, gte, ilike, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   ACTIVE_RESERVATION_STATUSES,
@@ -27,6 +27,7 @@ import {
   extras,
   folioItems,
   guests,
+  doorGrants,
   housekeepingTasks,
   invoices,
   payments,
@@ -400,9 +401,13 @@ export class ReservationsService {
   update(id: string, input: z.infer<typeof updateReservationSchema>) {
     return this.db.tenant(async (tx) => {
       const { reservation, property } = await this.load(tx, id, true);
-      const stay = await this.planChange(tx, reservation, property, input);
-      const [updated] = await tx.update(reservations).set({ ...input, ...stay }).where(eq(reservations.id, id)).returning();
-      await this.audit.log(tx, 'reservation.updated', 'reservation', id, { ...input, total: stay.totalAmount, previousTotal: reservation.totalAmount });
+      const { allowDirtyRoom, ...change } = input;
+      const stay = await this.planChange(tx, reservation, property, change);
+      const target = await this.guestMoveTarget(tx, reservation, change.roomId);
+      if (target?.status === 'dirty' && !allowDirtyRoom) throw conflict('ROOM_NOT_READY', 'The room has not been cleaned yet');
+      const [updated] = await tx.update(reservations).set({ ...change, ...stay }).where(eq(reservations.id, id)).returning();
+      if (target) await this.releaseRoomTo(tx, reservation, property, target);
+      await this.audit.log(tx, 'reservation.updated', 'reservation', id, { ...change, total: stay.totalAmount, previousTotal: reservation.totalAmount });
       return updated;
     });
   }
@@ -412,13 +417,19 @@ export class ReservationsService {
     return this.db.tenant(async (tx) => {
       const { reservation, property } = await this.load(tx, id, true);
       const stay = await this.planChange(tx, reservation, property, input);
+      const target = await this.guestMoveTarget(tx, reservation, input.roomId);
       const roomId = input.roomId === undefined ? reservation.roomId : input.roomId;
+      // The old door stops opening at once, because a grant only works for the stay's current room.
+      const [key] = target ? await tx.select({ id: doorGrants.id }).from(doorGrants).where(and(eq(doorGrants.reservationId, id), isNull(doorGrants.revokedAt))) : [];
       const ids = [reservation.roomId, roomId].filter((v): v is string => Boolean(v));
       const numbers = new Map((await tx.select({ id: rooms.id, number: rooms.number }).from(rooms).where(inArray(rooms.id, ids))).map((r) => [r.id, r.number]));
       const roomNumber = (room: string | null) => (room ? (numbers.get(room) ?? null) : null);
       return {
         currency: reservation.currency,
         source: reservation.source,
+        guestMoves: Boolean(target),
+        roomNotReady: target?.status === 'dirty',
+        needsNewDoorPin: Boolean(key),
         before: { arrival: reservation.arrival, departure: reservation.departure, roomNumber: roomNumber(reservation.roomId), total: reservation.totalAmount },
         after: { arrival: input.arrival ?? reservation.arrival, departure: input.departure ?? reservation.departure, roomNumber: roomNumber(roomId), total: stay.totalAmount },
       };
@@ -426,14 +437,12 @@ export class ReservationsService {
   }
 
   /** Checks a change against the rules and prices it; the caller decides whether to save it. */
-  private async planChange(tx: Tx, reservation: Reservation, property: Property, input: z.infer<typeof updateReservationSchema>) {
+  private async planChange(tx: Tx, reservation: Reservation, property: Property, input: Omit<z.infer<typeof updateReservationSchema>, 'allowDirtyRoom'>) {
     if (!['tentative', 'confirmed', 'checked_in'].includes(reservation.status)) {
       throw invalidState('Only active reservations can be modified');
     }
     if (input.status && reservation.status === 'checked_in') throw invalidState('Guest is already checked in');
-    if (input.roomId !== undefined && reservation.status === 'checked_in') {
-      throw invalidState('Use a room move for in-house guests');
-    }
+    if (input.roomId === null && reservation.status === 'checked_in') throw invalidState('An in-house guest must stay in a room');
     if (input.roomId) await this.assertRoomForType(tx, input.roomId, reservation.roomTypeId);
     await assertCompany(tx, input.companyId);
     const [rt] = await tx.select().from(roomTypes).where(eq(roomTypes.id, reservation.roomTypeId));
@@ -442,6 +451,25 @@ export class ReservationsService {
     if (adults + children > rt!.maxOccupancy) throw unprocessable(`This room type allows at most ${rt!.maxOccupancy} guests`);
     const roomId = input.roomId === undefined ? reservation.roomId : input.roomId;
     return this.repriceStay(tx, reservation, property, rt!, input.arrival ?? reservation.arrival, input.departure ?? reservation.departure, adults + children, roomId);
+  }
+
+  /** The room an in-house guest is moving into, if they are moving at all. */
+  private async guestMoveTarget(tx: Tx, r: Reservation, roomId: string | null | undefined) {
+    if (r.status !== 'checked_in' || !roomId || roomId === r.roomId) return null;
+    const [room] = await tx.select().from(rooms).where(eq(rooms.id, roomId)).for('update');
+    if (room!.occupancy === 'occupied') throw conflict(ERROR_CODES.ROOM_CONFLICT, 'The room is currently occupied');
+    return room!;
+  }
+
+  /** The guest has physically changed rooms: the new one fills, the old one needs cleaning. */
+  private async releaseRoomTo(tx: Tx, r: Reservation, property: Property, target: typeof rooms.$inferSelect) {
+    await tx.update(rooms).set({ occupancy: 'occupied' }).where(eq(rooms.id, target.id));
+    if (!r.roomId) return;
+    await tx.update(rooms).set({ occupancy: 'vacant', status: 'dirty' }).where(eq(rooms.id, r.roomId));
+    await tx
+      .insert(housekeepingTasks)
+      .values({ tenantId: requireTenant(), propertyId: property.id, roomId: r.roomId, type: 'checkout_clean', date: property.businessDate, priority: 1, createdById: ctx().userId })
+      .onConflictDoNothing();
   }
 
   /**

@@ -240,6 +240,9 @@ export interface StayMove {
 interface MovePreview {
   currency: string;
   source: string;
+  guestMoves: boolean;
+  roomNotReady: boolean;
+  needsNewDoorPin: boolean;
   before: { arrival: string; departure: string; roomNumber: string | null; total: number };
   after: { arrival: string; departure: string; roomNumber: string | null; total: number };
 }
@@ -255,7 +258,7 @@ export function MoveStayDialog({ move, onClose, onMoved }: { move: StayMove; onC
     gcTime: 0,
   });
   const save = useMutation({
-    mutationFn: () => api.patch(`/reservations/${id}`, change),
+    mutationFn: () => api.patch(`/reservations/${id}`, { ...change, allowDirtyRoom: preview.data?.roomNotReady }),
     onSuccess: async () => {
       await onMoved();
       onClose();
@@ -293,7 +296,10 @@ export function MoveStayDialog({ move, onClose, onMoved }: { move: StayMove; onC
               ))}
             </dl>
             <p className="text-xs text-muted">{t(p.before.total === p.after.total ? 'calendar.samePrice' : 'calendar.priceRule')}</p>
-            {['ota', 'agent'].includes(p.source) && <Alert tone="amber">{t('calendar.moveChannel', { source: t(`sources.${p.source}`) })}</Alert>}
+            {p.guestMoves && <p className="text-xs text-muted">{t('calendar.moveFreesRoom')}</p>}
+            {p.roomNotReady && <Alert tone="amber">{t('calendar.moveDirtyRoom')}</Alert>}
+            {p.needsNewDoorPin && <Alert tone="amber">{t('calendar.moveDoorPin')}</Alert>}
+            {['ota', 'agent'].includes(p.source) && stay(p.before) !== stay(p.after) && <Alert tone="amber">{t('calendar.moveChannel', { source: t(`sources.${p.source}`) })}</Alert>}
           </>
         )}
         <div className="flex justify-end gap-2">

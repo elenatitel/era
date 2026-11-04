@@ -269,6 +269,8 @@ export const updateReservationSchema = z.object({
   // Without the outer optional, a change that omits notes would erase them.
   notes: optionalText(2000).optional(),
   status: z.enum(['tentative', 'confirmed']).optional(),
+  /** Moves an in-house guest into a room that has not been cleaned yet. */
+  allowDirtyRoom: z.boolean().optional(),
 });
 export const moveReservationSchema = updateReservationSchema.pick({ arrival: true, departure: true, roomId: true });
 export const cancelReservationSchema = z.object({ reason: optionalText(500) });
