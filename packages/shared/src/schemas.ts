@@ -243,6 +243,9 @@ export const createReservationSchema = z
     status: z.enum(['tentative', 'confirmed']).default('confirmed'),
     /** Optional negotiated total that overrides calculated rates (requires rates.manage). */
     totalOverride: money.optional().nullable(),
+    /** Add-ons booked by staff; unlike the booking engine, these need not be sold online. */
+    extraIds: z.array(id).max(30).optional(),
+    promoCode: optionalText(40),
     externalRef: optionalText(80),
     notes: optionalText(2000),
   })
@@ -250,6 +253,8 @@ export const createReservationSchema = z
   .refine((v) => Boolean(v.guestId) !== Boolean(v.guest), { message: 'Provide either guestId or guest', path: ['guestId'] });
 
 export const updateReservationSchema = z.object({
+  arrival: isoDate.optional(),
+  departure: isoDate.optional(),
   roomId: id.optional().nullable(),
   adults: z.int().min(1).max(20).optional(),
   children: z.int().min(0).max(20).optional(),

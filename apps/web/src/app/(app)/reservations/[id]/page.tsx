@@ -5,14 +5,97 @@ import Link from 'next/link';
 import { ReservationDoorAccess } from '@/components/door-access';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { CHARGE_CATEGORIES, parseMoney } from '@pms/shared';
+import { CHARGE_CATEGORIES, addDays, parseMoney } from '@pms/shared';
+import { CompanyPicker } from '@/components/guest-picker';
 import { CheckInDialog, CheckOutDialog, PaymentForm } from '@/components/stay-dialogs';
-import { Badge, Button, Card, ErrorText, Field, Forbidden, Input, Modal, PageHeader, Select, Spinner, Table, Td, statusTone } from '@/components/ui';
+import { Alert, Badge, Button, Card, ErrorText, Field, Forbidden, Input, Modal, PageHeader, Select, Spinner, Table, Td, Textarea, statusTone } from '@/components/ui';
 import { ApiError, api } from '@/lib/api';
 import { date, dateTime, money, percent } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
-import type { ReservationDetail } from '@/lib/types';
+import type { Company, ReservationDetail } from '@/lib/types';
+
+/** Change the stay. In-house guests can only move their departure; the arrival already happened. */
+function EditStayDialog({ r, onClose }: { r: ReservationDetail; onClose: () => void }) {
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const inHouse = r.status === 'checked_in';
+  const [f, setF] = useState({ arrival: r.arrival, departure: r.departure, adults: r.adults, children: r.children, notes: r.notes ?? '', status: r.status });
+  const [company, setCompany] = useState<Company | null>(r.company);
+  const m = useMutation({
+    mutationFn: () =>
+      api.patch(`/reservations/${r.id}`, {
+        arrival: f.arrival,
+        departure: f.departure,
+        adults: f.adults,
+        children: f.children,
+        notes: f.notes || null,
+        companyId: company?.id ?? null,
+        ...(inHouse ? {} : { status: f.status }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries();
+      onClose();
+    },
+  });
+  return (
+    <Modal open onClose={onClose} title={t('reservations.edit')}>
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          m.mutate();
+        }}
+      >
+        <ErrorText error={m.error} />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t('reservations.arrival')}>
+            {(id) => (
+              <Input
+                id={id}
+                type="date"
+                disabled={inHouse}
+                min={r.property.businessDate}
+                value={f.arrival}
+                onChange={(e) => setF({ ...f, arrival: e.target.value, departure: e.target.value >= f.departure ? addDays(e.target.value, 1) : f.departure })}
+              />
+            )}
+          </Field>
+          <Field label={t('reservations.departure')}>
+            {(id) => <Input id={id} type="date" min={addDays(inHouse ? r.property.businessDate : f.arrival, 1)} value={f.departure} onChange={(e) => setF({ ...f, departure: e.target.value })} />}
+          </Field>
+          <Field label={t('reservations.adults')}>
+            {(id) => <Input id={id} type="number" min={1} max={20} value={f.adults} onChange={(e) => setF({ ...f, adults: Number(e.target.value) })} />}
+          </Field>
+          <Field label={t('reservations.children')}>
+            {(id) => <Input id={id} type="number" min={0} max={20} value={f.children} onChange={(e) => setF({ ...f, children: Number(e.target.value) })} />}
+          </Field>
+        </div>
+        <p className="text-xs text-muted">{t('reservations.repriceHint')}</p>
+        {!inHouse && (
+          <Field label={t('common.status')}>
+            {(id) => (
+              <Select id={id} value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
+                <option value="confirmed">{t('resStatus.confirmed')}</option>
+                <option value="tentative">{t('resStatus.tentative')}</option>
+              </Select>
+            )}
+          </Field>
+        )}
+        <Field label={t('reservations.company')}>{() => <CompanyPicker value={company} onChange={setCompany} />}</Field>
+        <Field label={t('common.notes')}>{(id) => <Textarea id={id} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} />}</Field>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" type="button" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" loading={m.isPending}>
+            {t('common.save')}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 
 function ChargeDialog({ r, onClose }: { r: ReservationDetail; onClose: () => void }) {
   const { t } = useI18n();
@@ -78,7 +161,7 @@ export default function ReservationPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['reservation', id], queryFn: () => api.get<ReservationDetail>(`/reservations/${id}`) });
-  const [dialog, setDialog] = useState<'checkin' | 'checkout' | 'charge' | 'payment' | null>(null);
+  const [dialog, setDialog] = useState<'checkin' | 'checkout' | 'charge' | 'payment' | 'edit' | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ['reservation', id] });
 
   const cancel = useMutation({
@@ -104,6 +187,9 @@ export default function ReservationPage() {
   const r = q.data!;
   const m = (v: number) => money(v, r.currency, locale);
   const active = ['tentative', 'confirmed'].includes(r.status);
+  const today = r.property.businessDate;
+  const arrivesLater = active && r.arrival > today;
+  const due = r.totals?.due ?? 0;
 
   return (
     <>
@@ -121,7 +207,12 @@ export default function ReservationPage() {
         }
         actions={
           <>
-            {active && can('frontdesk.checkin') && <Button onClick={() => setDialog('checkin')}>{t('frontDesk.checkIn')}</Button>}
+            {(active || r.status === 'checked_in') && can('reservations.update') && (
+              <Button variant="secondary" onClick={() => setDialog('edit')}>
+                {t('common.edit')}
+              </Button>
+            )}
+            {active && !arrivesLater && can('frontdesk.checkin') && <Button onClick={() => setDialog('checkin')}>{t('frontDesk.checkIn')}</Button>}
             {r.status === 'checked_in' && can('frontdesk.checkout') && <Button onClick={() => setDialog('checkout')}>{t('frontDesk.checkOut')}</Button>}
             {active && can('reservations.cancel') && (
               <>
@@ -137,6 +228,11 @@ export default function ReservationPage() {
         }
       />
       <ErrorText error={cancel.error ?? invoice.error ?? voidItem.error} />
+      {arrivesLater && can('frontdesk.checkin') && (
+        <div className="mb-4">
+          <Alert tone="blue">{t('reservations.checkInFrom', { date: date(r.arrival, locale) })}</Alert>
+        </div>
+      )}
 
       {can('frontdesk.checkin')&&<ReservationDoorAccess key={r.id} reservationId={r.id} status={r.status}/>}
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
@@ -267,8 +363,8 @@ export default function ReservationPage() {
           title={
             <span className="flex items-center gap-3">
               {t('reservations.folio')}
-              <Badge tone={r.totals.balance > 0 ? 'amber' : 'green'}>
-                {t('reservations.balance')}: {m(r.totals.balance)}
+              <Badge tone={due > 0 ? 'amber' : 'green'}>
+                {t(r.totals.pending > 0 ? 'reservations.stayDue' : 'reservations.balance')}: {m(due)}
               </Badge>
             </span>
           }
@@ -352,9 +448,15 @@ export default function ReservationPage() {
                   <dt className="text-muted">{t('reservations.paid')}</dt>
                   <dd>{m(r.totals.payments)}</dd>
                 </div>
+                {r.totals.pending > 0 && (
+                  <div className="flex justify-between">
+                    <dt className="text-muted">{t('reservations.pendingCharges')}</dt>
+                    <dd>{m(r.totals.pending)}</dd>
+                  </div>
+                )}
                 <div className="flex justify-between border-t border-line pt-1 text-base font-semibold">
-                  <dt>{t('reservations.balance')}</dt>
-                  <dd>{m(r.totals.balance)}</dd>
+                  <dt>{t(r.totals.pending > 0 ? 'reservations.stayDue' : 'reservations.balance')}</dt>
+                  <dd>{m(due)}</dd>
                 </div>
               </dl>
               {r.invoices.length > 0 && (
@@ -384,7 +486,8 @@ export default function ReservationPage() {
         </div>
       </Card>
 
-      {dialog === 'checkin' && <CheckInDialog reservationId={r.id} title={t('frontDesk.checkIn')} onClose={() => setDialog(null)} />}
+      {dialog === 'edit' && <EditStayDialog r={r} onClose={() => setDialog(null)} />}
+      {dialog === 'checkin' && <CheckInDialog reservationId={r.id} roomId={r.room?.id} title={t('frontDesk.checkIn')} onClose={() => setDialog(null)} />}
       {dialog === 'checkout' && <CheckOutDialog reservationId={r.id} title={t('frontDesk.checkOut')} onClose={() => setDialog(null)} />}
       {dialog === 'charge' && <ChargeDialog r={r} onClose={() => setDialog(null)} />}
       {dialog === 'payment' && (
@@ -392,7 +495,7 @@ export default function ReservationPage() {
           <PaymentForm
             reservationId={r.id}
             currency={r.currency}
-            suggested={r.totals && r.totals.balance > 0 ? r.totals.balance : undefined}
+            suggested={due > 0 ? due : undefined}
             onDone={() => {
               void refresh();
               setDialog(null);

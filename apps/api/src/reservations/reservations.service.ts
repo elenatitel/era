@@ -9,8 +9,10 @@ import {
   applyDiscount,
   availabilitySchema,
   createReservationSchema,
+  extraQuantity,
   nightsBetween,
   reservationSearchSchema,
+  stayDates,
   todayIn,
   updateReservationSchema,
 } from '@pms/shared';
@@ -35,19 +37,28 @@ import {
   roomTypes,
   users,
 } from '../db/schema.js';
-import { folioTotals, postBookedExtras, postRoomCharges } from '../finance/folio.js';
+import { folioTotals, pendingCharges, postBookedExtras, postRoomCharges } from '../finance/folio.js';
 import { assertCompany, insertGuest, presentGuest } from '../guests/guests.module.js';
 import { decryptNullable, mask } from '../common/crypto.js';
 import { getAccessibleProperty } from '../properties/properties.module.js';
 import { availability, bookExtra, findPromo, freeRooms, minFree, packageExtras, promoProblem, quote } from '../properties/pricing.js';
 
 type Reservation = typeof reservations.$inferSelect;
+type Property = typeof properties.$inferSelect;
+type RoomType = typeof roomTypes.$inferSelect;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const generateCode = () => Array.from({ length: 8 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
 
 /** Serializes inventory changes for one room type (prevents overbooking under concurrency). */
 async function lockRoomType(tx: Tx, roomTypeId: string) {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${roomTypeId}, 0))`);
+}
+
+/** The day an in-house guest really leaves: never before the first night is over, never after the booking ends. */
+function actualDeparture(reservation: Reservation, today: string) {
+  if (today >= reservation.departure) return reservation.departure;
+  const firstMorning = addDays(reservation.arrival, 1);
+  return today > firstMorning ? today : firstMorning;
 }
 
 @Injectable()
@@ -120,10 +131,10 @@ export class ReservationsService {
   // ---------------------------------------------------------------- create
 
   /**
-   * `options` carries what only the booking engine sends today: optional extras (must be
-   * bookable online) and a promo code. Package extras of the rate plan are always added.
+   * `options` carries optional extras and a promo code. Guests can only book extras sold
+   * online; `staff` lifts that limit. Package extras of the rate plan are always added.
    */
-  create(input: z.infer<typeof createReservationSchema>, options: { extraIds?: string[]; promoCode?: string | null } = {}) {
+  create(input: Omit<z.infer<typeof createReservationSchema>, 'extraIds' | 'promoCode'>, options: { extraIds?: string[]; promoCode?: string | null; staff?: boolean } = {}) {
     if (input.totalOverride != null && !hasPermission('rates.manage')) {
       throw forbidden('Overriding the price requires the rates.manage permission');
     }
@@ -184,7 +195,7 @@ export class ReservationsService {
         const chosen = await tx
           .select()
           .from(extras)
-          .where(and(inArray(extras.id, optionalIds), eq(extras.propertyId, property.id), eq(extras.active, true), eq(extras.bookableOnline, true)));
+          .where(and(inArray(extras.id, optionalIds), eq(extras.propertyId, property.id), eq(extras.active, true), options.staff ? undefined : eq(extras.bookableOnline, true)));
         if (chosen.length !== optionalIds.length) throw unprocessable('Some of the selected extras are no longer available');
         bookedExtras.push(...chosen.map((e) => bookExtra(e, nights, guestCount, false)));
       }
@@ -341,6 +352,8 @@ export class ReservationsService {
         hasPermission('folio.read') ? folioTotals(tx, id) : null,
       ]);
       const companions = await tx.select().from(reservationGuests).where(eq(reservationGuests.reservationId, id));
+      const open = ['tentative', 'confirmed', 'checked_in'].includes(reservation.status);
+      const pending = totals && open ? await pendingCharges(tx, reservation, reservation.departure) : 0;
       return {
         ...reservation,
         property: { id: property.id, name: property.name, businessDate: property.businessDate, currency: property.currency },
@@ -352,7 +365,7 @@ export class ReservationsService {
         folio: items.map((i) => ({ ...i.item, postedBy: i.postedBy })),
         payments: pays,
         invoices: docs,
-        totals,
+        totals: totals && { ...totals, pending, due: totals.balance + pending },
         companions: companions.map((c) => {
           const doc = decryptNullable(c.documentNumberEnc);
           return {
@@ -373,7 +386,7 @@ export class ReservationsService {
 
   update(id: string, input: z.infer<typeof updateReservationSchema>) {
     return this.db.tenant(async (tx) => {
-      const { reservation } = await this.load(tx, id, true);
+      const { reservation, property } = await this.load(tx, id, true);
       if (!['tentative', 'confirmed', 'checked_in'].includes(reservation.status)) {
         throw invalidState('Only active reservations can be modified');
       }
@@ -387,10 +400,53 @@ export class ReservationsService {
       const adults = input.adults ?? reservation.adults;
       const children = input.children ?? reservation.children;
       if (adults + children > rt!.maxOccupancy) throw unprocessable(`This room type allows at most ${rt!.maxOccupancy} guests`);
-      const [updated] = await tx.update(reservations).set(input).where(eq(reservations.id, id)).returning();
-      await this.audit.log(tx, 'reservation.updated', 'reservation', id, input);
+      const stay = await this.repriceStay(tx, reservation, property, rt!, input.arrival ?? reservation.arrival, input.departure ?? reservation.departure, adults + children);
+      const [updated] = await tx.update(reservations).set({ ...input, ...stay }).where(eq(reservations.id, id)).returning();
+      await this.audit.log(tx, 'reservation.updated', 'reservation', id, { ...input, total: stay.totalAmount, previousTotal: reservation.totalAmount });
       return updated;
     });
+  }
+
+  /**
+   * Prices a changed stay. Nights that stay keep their agreed price (promo or negotiated);
+   * only added nights take the current rate. Extras follow the stay until they reach the folio.
+   */
+  private async repriceStay(tx: Tx, r: Reservation, property: Property, rt: RoomType, arrival: string, departure: string, guestCount: number) {
+    let nightlyRates = r.nightlyRates;
+    if (arrival !== r.arrival || departure !== r.departure) {
+      const inHouse = r.status === 'checked_in';
+      if (departure <= arrival) throw unprocessable('Departure must be after arrival');
+      const nights = nightsBetween(arrival, departure);
+      if (nights > 60) throw unprocessable('Stays are limited to 60 nights');
+      if (inHouse && arrival !== r.arrival) throw invalidState('The arrival of an in-house guest cannot change');
+      if (inHouse && departure <= property.businessDate) throw invalidState('Use check-out for a guest who leaves today');
+      if (!inHouse && arrival < property.businessDate) throw unprocessable('Arrival cannot be before the current business date');
+      const [plan] = await tx.select().from(ratePlans).where(eq(ratePlans.id, r.ratePlanId));
+      if (!inHouse && nights < plan!.minNights) throw unprocessable(`This rate requires a minimum stay of ${plan!.minNights} nights`);
+
+      await lockRoomType(tx, rt.id);
+      const agreed = new Map(r.nightlyRates.map((n) => [n.date, n.amount]));
+      const added = new Set(stayDates(arrival, departure).filter((d) => !agreed.has(d)));
+      const sold = (await availability(tx, property.id, arrival, departure, [rt.id])).filter((row) => added.has(row.date) && row.total - row.booked < 1);
+      if (sold.length) {
+        throw conflict(ERROR_CODES.NO_AVAILABILITY, 'No rooms of this type are available for the selected dates', { dates: sold.map((row) => row.date) });
+      }
+      if (r.roomId && !(await freeRooms(tx, rt.id, arrival, departure, r.id)).some((room) => room.id === r.roomId)) {
+        throw conflict(ERROR_CODES.ROOM_CONFLICT, 'The assigned room is taken on the new dates');
+      }
+      const qt = await quote(tx, rt, plan!, arrival, departure);
+      const closed = qt.closedDates.filter((d) => added.has(d));
+      if (closed.length) throw conflict(ERROR_CODES.NO_AVAILABILITY, 'Sales are closed on some of the selected dates', { closedDates: closed });
+      nightlyRates = qt.nightlyRates.map((n) => ({ date: n.date, amount: agreed.get(n.date) ?? n.amount }));
+    }
+    const bookedExtras = r.extrasPostedAt
+      ? r.extras
+      : r.extras.map((e) => {
+          const quantity = extraQuantity(e.unit, nightlyRates.length, guestCount);
+          return { ...e, quantity, amount: e.unitPrice * quantity };
+        });
+    const extrasAmount = bookedExtras.reduce((s, e) => s + e.amount, 0);
+    return { nightlyRates, extras: bookedExtras, extrasAmount, totalAmount: nightlyRates.reduce((s, n) => s + n.amount, 0) + extrasAmount };
   }
 
   cancel(id: string, reason: string | null, noShow = false) {
@@ -438,6 +494,25 @@ export class ReservationsService {
     });
   }
 
+  /** What check-out will do, so the desk sees the final bill before committing to it. */
+  checkOutPreview(id: string) {
+    return this.db.tenant(async (tx) => {
+      const { reservation, property } = await this.load(tx, id);
+      if (reservation.status !== 'checked_in') throw invalidState('Only in-house guests can be checked out');
+      const departure = actualDeparture(reservation, property.businessDate);
+      const pending = await pendingCharges(tx, reservation, departure);
+      const totals = await folioTotals(tx, id);
+      return {
+        propertyId: property.id,
+        departure,
+        nightsReleased: reservation.nightlyRates.filter((n) => n.date >= departure).length,
+        charges: totals.charges + pending,
+        payments: totals.payments,
+        balance: totals.balance + pending,
+      };
+    });
+  }
+
   checkOut(id: string, allowOpenBalance: boolean) {
     if (allowOpenBalance && !hasPermission('invoices.issue')) {
       throw forbidden('Checking out with an open balance requires the invoices.issue permission');
@@ -446,18 +521,17 @@ export class ReservationsService {
       const { reservation, property } = await this.load(tx, id, true);
       if (reservation.status !== 'checked_in') throw invalidState('Only in-house guests can be checked out');
       const today = property.businessDate;
-      const minDeparture = addDays(reservation.arrival, 1);
-      const actualDeparture = today < reservation.departure ? (today > minDeparture ? today : minDeparture) : reservation.departure;
+      const leaving = actualDeparture(reservation, today);
       // Early departure: release the remaining nights.
-      if (actualDeparture < reservation.departure) {
-        const nightlyRates = reservation.nightlyRates.filter((n) => n.date < actualDeparture);
+      if (leaving < reservation.departure) {
+        const nightlyRates = reservation.nightlyRates.filter((n) => n.date < leaving);
         await tx
           .update(reservations)
-          .set({ departure: actualDeparture, nightlyRates, totalAmount: nightlyRates.reduce((s, n) => s + n.amount, 0) + reservation.extrasAmount })
+          .set({ departure: leaving, nightlyRates, totalAmount: nightlyRates.reduce((s, n) => s + n.amount, 0) + reservation.extrasAmount })
           .where(eq(reservations.id, id));
         reservation.nightlyRates = nightlyRates;
       }
-      await postRoomCharges(tx, reservation, property, actualDeparture, ctx().userId);
+      await postRoomCharges(tx, reservation, property, leaving, ctx().userId);
       await postBookedExtras(tx, reservation, ctx().userId);
       const totals = await folioTotals(tx, id);
       if (totals.balance > 0 && !allowOpenBalance) {
@@ -483,7 +557,7 @@ export class ReservationsService {
           })
           .onConflictDoNothing();
       }
-      await this.audit.log(tx, 'reservation.checked_out', 'reservation', id, { balance: totals.balance, early: actualDeparture !== reservation.departure });
+      await this.audit.log(tx, 'reservation.checked_out', 'reservation', id, { balance: totals.balance, early: leaving !== reservation.departure });
       return { ...updated, totals };
     });
   }

@@ -69,6 +69,20 @@ export async function postBookedExtras(tx: Tx, reservation: Reservation, userId?
   return reservation.extras.length;
 }
 
+/**
+ * What the stay will still add to the folio before `untilExclusive`: room nights the night
+ * audit has not posted yet, and booked extras that are not on the folio yet.
+ */
+export async function pendingCharges(tx: Tx, reservation: Reservation, untilExclusive: string) {
+  const posted = await tx
+    .select({ date: folioItems.serviceDate })
+    .from(folioItems)
+    .where(and(eq(folioItems.reservationId, reservation.id), eq(folioItems.isRoomCharge, true), isNull(folioItems.voidedAt)));
+  const postedDates = new Set(posted.map((p) => p.date));
+  const nights = reservation.nightlyRates.filter((n) => n.date < untilExclusive && !postedDates.has(n.date));
+  return nights.reduce((s, n) => s + n.amount, 0) + (reservation.extrasPostedAt ? 0 : reservation.extrasAmount);
+}
+
 export async function folioTotals(tx: Tx, reservationId: string) {
   const [charges] = await tx
     .select({ total: sql<number>`coalesce(sum(${folioItems.amount}), 0)::bigint` })
