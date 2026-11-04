@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Fragment, useEffect, useState } from 'react';
 import { addDays, nightsBetween, weekday } from '@pms/shared';
 import { PropertyGate } from '@/components/property-gate';
+import { StayPanel } from '@/components/stay-panel';
 import { Badge, Button, Card, ErrorText, Input, PageHeader, Spinner, Tabs, statusTone } from '@/components/ui';
 import { api } from '@/lib/api';
 import { date } from '@/lib/format';
@@ -30,6 +31,7 @@ interface Found {
   arrival: string;
   departure: string;
   guestName: string;
+  guestPhone: string | null;
   roomNumber: string | null;
 }
 
@@ -62,7 +64,7 @@ function stack(bookings: Cal['reservations']) {
   return { lane, lanes: Math.max(1, ends.length) };
 }
 
-function Timeline({ property, start, length, highlight }: { property: Property; start: string; length: number; highlight: string | null }) {
+function Timeline({ property, start, length, selected, scrollTo, onSelect }: { property: Property; start: string; length: number; selected: string | null; scrollTo: string | null; onSelect: (id: string) => void }) {
   const { t, locale } = useI18n();
   const { can } = useSession();
   const end = addDays(start, length);
@@ -71,10 +73,11 @@ function Timeline({ property, start, length, highlight }: { property: Property; 
     queryFn: () => api.get<Cal>('/reservations/calendar', { propertyId: property.id, from: start, to: end }),
     placeholderData: (p) => p,
   });
-  const loaded = Boolean(q.data);
+  // Waits for this period's bars: while it loads, the previous period is still on screen.
+  const ready = Boolean(q.data) && !q.isPlaceholderData;
   useEffect(() => {
-    if (highlight && loaded) document.querySelector('[data-found]')?.scrollIntoView({ block: 'center', inline: 'center' });
-  }, [highlight, start, loaded]);
+    if (scrollTo && ready) document.querySelector('[data-selected]')?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+  }, [scrollTo, ready]);
   const days = Array.from({ length }, (_, i) => addDays(start, i));
   const dense = length > 14;
   const lang = locale === 'en' ? 'en-GB' : 'ro-RO';
@@ -140,12 +143,17 @@ function Timeline({ property, start, length, highlight }: { property: Property; 
                         <Link
                           key={b.id}
                           href={`/reservations/${b.id}`}
-                          data-found={b.id === highlight ? '' : undefined}
+                          data-selected={b.id === selected ? '' : undefined}
+                          onClick={(e) => {
+                            // Ctrl/Cmd+click still opens the full reservation in a new tab.
+                            if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+                            e.preventDefault();
+                            onSelect(b.id);
+                          }}
                           title={`${b.guestName} · ${b.code} · ${date(b.arrival, locale)} – ${date(b.departure, locale)}`}
                           className={clsx(
                             'pointer-events-auto absolute truncate rounded-sm px-2 text-xs leading-7 font-medium hover:brightness-95',
-                            barColor[b.status] ?? 'bg-subtle text-muted',
-                            b.id === highlight && 'z-10 ring-2 ring-focus ring-offset-1 ring-offset-surface',
+                            b.id === selected ? 'z-10 bg-orange-500 text-white shadow-md ring-2 ring-orange-300' : (barColor[b.status] ?? 'bg-subtle text-muted'),
                           )}
                           style={{ left: `${(left / length) * 100}%`, width: `calc(${((right - left) / length) * 100}% - 3px)`, top: 6 + (lane.get(b.id) ?? 0) * 32 }}
                         >
@@ -238,26 +246,39 @@ function CalendarSearch({ property, onPick }: { property: Property; onPick: (r: 
     queryFn: () => api.get<{ items: Found[] }>('/reservations', { propertyId: property.id, q: term, pageSize: 8 }),
     enabled: term.length >= 2,
   });
+  const pick = (r: Found) => {
+    setQ('');
+    onPick(r);
+  };
   return (
     <div className="relative min-w-56 flex-1">
       <Search size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
-      <Input className="pl-9" aria-label={t('calendar.search')} placeholder={t('calendar.search')} value={q} onChange={(e) => setQ(e.target.value)} />
+      <Input
+        className="pl-9"
+        aria-label={t('calendar.search')}
+        placeholder={t('calendar.search')}
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setQ('');
+          const first = results.data?.items[0];
+          if (e.key === 'Enter' && term.length >= 2 && first) pick(first);
+        }}
+      />
       {term.length >= 2 && results.data && (
-        <ul className="absolute z-30 mt-1 max-h-72 w-full min-w-72 overflow-auto rounded-lg border border-line bg-surface shadow-lg">
+        <ul className="absolute right-0 z-30 mt-1 max-h-72 w-full min-w-80 overflow-auto rounded-lg border border-line bg-surface shadow-lg">
           {results.data.items.map((r) => (
             <li key={r.id}>
               <button
                 className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-subtle"
-                onClick={() => {
-                  setQ('');
-                  onPick(r);
-                }}
+                onClick={() => pick(r)}
               >
                 <span>
                   <span className="font-medium">{r.guestName}</span>
                   <span className="block text-xs text-muted">
                     {date(r.arrival, locale)} – {date(r.departure, locale)}
                     {r.roomNumber && ` · ${r.roomNumber}`}
+                    {r.guestPhone && ` · ${r.guestPhone}`}
                   </span>
                 </span>
                 <Badge tone={statusTone[r.status]}>{t(`resStatus.${r.status}`)}</Badge>
@@ -276,7 +297,8 @@ function Calendar({ property }: { property: Property }) {
   const home = addDays(property.businessDate, -1);
   const [view, setView] = useState<View>('fortnight');
   const [anchor, setAnchor] = useState(home);
-  const [highlight, setHighlight] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [scrollTo, setScrollTo] = useState<string | null>(null);
 
   const start = view === 'month' ? monthStart(anchor) : anchor;
   const year = Number(anchor.slice(0, 4));
@@ -334,24 +356,30 @@ function Calendar({ property }: { property: Property }) {
           <CalendarSearch
             property={property}
             onPick={(r) => {
-              setHighlight(r.id);
+              setSelected(r.id);
+              setScrollTo(r.id);
               goTo(r.arrival);
             }}
           />
         </div>
       </div>
-      {view === 'year' ? (
-        <YearView
-          property={property}
-          year={year}
-          onPick={(d) => {
-            setView('month');
-            setAnchor(d);
-          }}
-        />
-      ) : (
-        <Timeline property={property} start={start} length={length} highlight={highlight} />
-      )}
+      <div className="flex items-start gap-4">
+        <div className="min-w-0 flex-1">
+          {view === 'year' ? (
+            <YearView
+              property={property}
+              year={year}
+              onPick={(d) => {
+                setView('month');
+                setAnchor(d);
+              }}
+            />
+          ) : (
+            <Timeline property={property} start={start} length={length} selected={selected} scrollTo={scrollTo} onSelect={setSelected} />
+          )}
+        </div>
+        {selected && <StayPanel key={selected} reservationId={selected} onClose={() => setSelected(null)} />}
+      </div>
     </>
   );
 }
