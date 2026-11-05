@@ -4,6 +4,9 @@ const bool = z.enum(['true', 'false', '1', '0']).transform((v) => v === 'true' |
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  DOORKEY_MANAGER_URL: z.url().optional(),
+  DOORKEY_SERVICE_TOKEN: z.string().min(43).optional(),
+  LEGACY_DOOR_ACCESS: bool.default(false),
   PORT: z.coerce.number().int().default(4000),
   APP_NAME: z.string().default('era.'),
   /** Public URL of the web app, used for CORS/Origin checks and links in e-mails. */

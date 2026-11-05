@@ -1,0 +1,10 @@
+# Managed database and roles on the existing HA cluster. Deploy in namespace postgres.
+clusterName: postgres-geo
+databaseName: era_doorkey_staging
+roles:
+  owner:
+    name: era_doorkey_staging_owner
+    existingSecret: era-doorkey-staging-owner
+  app:
+    name: era_doorkey_staging_app
+    existingSecret: era-doorkey-staging-app

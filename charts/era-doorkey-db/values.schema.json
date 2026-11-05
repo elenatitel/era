@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "clusterName",
+    "databaseName",
+    "roles"
+  ],
+  "properties": {
+    "clusterName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "databaseName": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_]{0,62}$"
+    },
+    "roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "app"
+      ],
+      "properties": {
+        "owner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "existingSecret"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z_][a-z0-9_]{0,62}$"
+            },
+            "existingSecret": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "app": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "existingSecret"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z_][a-z0-9_]{0,62}$"
+            },
+            "existingSecret": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

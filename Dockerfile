@@ -13,10 +13,12 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
+COPY apps/doorkey-manager/package.json apps/doorkey-manager/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 RUN npm ci --include-workspace-root
 COPY packages/shared packages/shared
+COPY apps/doorkey-manager apps/doorkey-manager
 COPY apps/api apps/api
 COPY apps/web apps/web
 # Baked into the web bundle at build time.
@@ -35,6 +37,7 @@ FROM ${NODE_IMAGE} AS api-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
+COPY apps/doorkey-manager/package.json apps/doorkey-manager/
 COPY apps/api/package.json apps/api/
 RUN npm ci -w @pms/shared -w @pms/api --omit=dev && npm cache clean --force
 
@@ -65,3 +68,22 @@ USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "apps/web/server.js"]
+
+# DoorKey runs separately from the PMS and holds the issuer key only at runtime.
+FROM build-base AS doorkey-manager-build
+RUN npm run build -w @pms/doorkey-manager
+FROM ${NODE_IMAGE} AS doorkey-manager-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY apps/doorkey-manager/package.json apps/doorkey-manager/
+RUN npm ci -w @pms/doorkey-manager --omit=dev && npm cache clean --force
+FROM ${NODE_IMAGE} AS doorkey-manager
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=doorkey-manager-deps --chown=node:node /app/node_modules ./node_modules
+COPY --from=doorkey-manager-build --chown=node:node /app/apps/doorkey-manager/package.json ./apps/doorkey-manager/package.json
+COPY --from=doorkey-manager-build --chown=node:node /app/apps/doorkey-manager/dist ./apps/doorkey-manager/dist
+USER node
+WORKDIR /app/apps/doorkey-manager
+EXPOSE 4001
+CMD ["node", "dist/main.js"]

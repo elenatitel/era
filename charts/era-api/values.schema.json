@@ -108,6 +108,27 @@
           "minLength": 1
         }
       }
+    },
+    "doorkey": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "managerUrl",
+        "existingSecret"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "managerUrl": {
+          "type": "string",
+          "pattern": "^https?://"
+        },
+        "existingSecret": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
     }
   }
 }

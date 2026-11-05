@@ -71,6 +71,10 @@ spec:
             - name: OIDC_BOOTSTRAP_SUBJECT
               valueFrom: {secretKeyRef: {name: {{ .Values.auth.existingSecret }}, key: OIDC_BOOTSTRAP_SUBJECT}}
             {{- end }}
+            {{- if .Values.doorkey.enabled }}
+            - name: DOORKEY_SERVICE_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ .Values.doorkey.existingSecret }}, key: SERVICE_TOKEN}}
+            {{- end }}
             - name: JWT_SECRET
               valueFrom: {secretKeyRef: {name: {{ $secret }}, key: JWT_SECRET}}
             - name: ENCRYPTION_KEY

@@ -9,6 +9,10 @@ data:
   OIDC_ISSUER: {{ .Values.auth.issuer | quote }}
   OIDC_CLIENT_ID: {{ .Values.auth.clientId | quote }}
   {{- end }}
+  LEGACY_DOOR_ACCESS: "false"
+  {{- if .Values.doorkey.enabled }}
+  DOORKEY_MANAGER_URL: {{ .Values.doorkey.managerUrl | quote }}
+  {{- end }}
   PORT: "4000"
   APP_NAME: {{ .Values.app.name | quote }}
   WEB_ORIGIN: {{ .Values.app.webOrigin | quote }}

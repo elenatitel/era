@@ -63,3 +63,9 @@ auth:
   issuer: https://keycloak.cloud.retreat480.com/realms/staging
   clientId: era-staging
   existingSecret: era-oidc
+
+# DoorKey signing stays in a separate service. This API only gets the bridge token.
+doorkey:
+  enabled: true
+  managerUrl: http://era-doorkey-manager:4001
+  existingSecret: era-doorkey-bridge

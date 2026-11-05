@@ -51,7 +51,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [api, web]
+        component: [api, web, doorkey-manager]
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -163,8 +163,8 @@ jobs:
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v3.19.0
-      - name: Validate database chart
-        run: helm lint charts/era-db
+      - name: Validate database charts
+        run: helm lint charts/era-db charts/era-doorkey-db
       - name: Package and publish database chart
         if: github.event_name != 'pull_request'
         shell: bash
@@ -173,12 +173,16 @@ jobs:
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
         run: |
           version="0.1.0-ci.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
-          python3 scripts/package-chart.py charts/era-db \
-            --version "$version" --app-version "$GITHUB_SHA"
+          for chart in era-db era-doorkey-db; do
+            python3 scripts/package-chart.py "charts/$chart" \
+              --version "$version" --app-version "$GITHUB_SHA"
+          done
           export HELM_REGISTRY_CONFIG="$RUNNER_TEMP/helm-registry.json"
           trap 'rm -f "$HELM_REGISTRY_CONFIG"' EXIT
           printf '%s' "$HARBOR_PASSWORD" | helm registry login "$REGISTRY" \
             --username "$HARBOR_USERNAME" --password-stdin
-          helm push "dist/charts/era-db-$version.tgz" "oci://$REGISTRY/$PROJECT"
+          for chart in era-db era-doorkey-db; do
+            helm push "dist/charts/$chart-$version.tgz" "oci://$REGISTRY/$PROJECT"
+          done
           printf '\nChart: `era-db` version `%s` (database and restricted roles on the existing CNPG cluster)\n' \
             "$version" >> "$GITHUB_STEP_SUMMARY"

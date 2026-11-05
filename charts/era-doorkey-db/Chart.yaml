@@ -1,0 +1,6 @@
+apiVersion: v2
+name: era-doorkey-db
+description: DoorKey database and least-privileged roles on an existing CloudNativePG cluster
+type: application
+version: 0.1.0
+appVersion: "18"
