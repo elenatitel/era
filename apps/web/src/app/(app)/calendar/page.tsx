@@ -1,12 +1,13 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import Link from 'next/link';
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { addDays, nightsBetween, weekday } from '@pms/shared';
 import { PropertyGate } from '@/components/property-gate';
+import { MoveStayDialog, type StayMove } from '@/components/stay-dialogs';
 import { StayPanel } from '@/components/stay-panel';
 import { Badge, Button, Card, ErrorText, Input, PageHeader, Spinner, Tabs, statusTone } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -51,8 +52,23 @@ function addMonths(first: string, n: number) {
 }
 const utc = (d: string) => new Date(`${d}T00:00:00Z`);
 
+type Booking = Cal['reservations'][number];
+type Row = { key: string; label: string; roomId: string | null; roomTypeId: string; muted?: boolean };
+interface Drag {
+  booking: Booking;
+  /** Which part is held: the whole stay, or one of its ends. */
+  part: 'move' | 'start' | 'end';
+  fromX: number;
+  dayWidth: number;
+  days: number;
+  rowKey: string;
+  x: number;
+  y: number;
+  moved: boolean;
+}
+
 /** Unassigned stays share a row, so overlapping ones go on separate lines. */
-function stack(bookings: Cal['reservations']) {
+function stack(bookings: Booking[]) {
   const ends: string[] = [];
   const lane = new Map<string, number>();
   for (const b of [...bookings].sort((x, y) => x.arrival.localeCompare(y.arrival))) {
@@ -67,6 +83,11 @@ function stack(bookings: Cal['reservations']) {
 function Timeline({ property, start, length, selected, scrollTo, onSelect }: { property: Property; start: string; length: number; selected: string | null; scrollTo: string | null; onSelect: (id: string) => void }) {
   const { t, locale } = useI18n();
   const { can } = useSession();
+  const qc = useQueryClient();
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [pendingMove, setPendingMove] = useState<StayMove | null>(null);
+  // A drag ends in a click on the bar, which must not also open the stay.
+  const justDragged = useRef(false);
   const end = addDays(start, length);
   const q = useQuery({
     queryKey: ['calendar', property.id, start, length],
@@ -78,6 +99,12 @@ function Timeline({ property, start, length, selected, scrollTo, onSelect }: { p
   useEffect(() => {
     if (scrollTo && ready) document.querySelector('[data-selected]')?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
   }, [scrollTo, ready]);
+  useEffect(() => {
+    if (!drag) return;
+    const cancel = (e: KeyboardEvent) => e.key === 'Escape' && setDrag(null);
+    window.addEventListener('keydown', cancel);
+    return () => window.removeEventListener('keydown', cancel);
+  }, [drag]);
   const days = Array.from({ length }, (_, i) => addDays(start, i));
   const dense = length > 14;
   const lang = locale === 'en' ? 'en-GB' : 'ro-RO';
@@ -86,89 +113,210 @@ function Timeline({ property, start, length, selected, scrollTo, onSelect }: { p
   if (q.isLoading) return <Spinner />;
   if (q.error) return <ErrorText error={q.error} />;
   const types = [...new Map(q.data!.rooms.map((r) => [r.roomTypeId, r.roomTypeCode])).entries()];
-  const rows: { key: string; label: string; roomId: string | null; roomTypeId: string; muted?: boolean }[] = [];
+  const rows: Row[] = [];
   for (const [typeId, code] of types) {
     for (const r of q.data!.rooms.filter((x) => x.roomTypeId === typeId)) rows.push({ key: r.id, label: r.number, roomId: r.id, roomTypeId: typeId });
     if (q.data!.reservations.some((r) => !r.roomId && r.roomTypeId === typeId))
       rows.push({ key: `u-${typeId}`, label: `${code} · ${t('calendar.unassigned')}`, roomId: null, roomTypeId: typeId, muted: true });
   }
 
+  const movable = can('reservations.update');
+  const inHouse = (b: Booking) => b.status === 'checked_in';
+  const canDrag = (b: Booking) => movable && ['tentative', 'confirmed', 'checked_in'].includes(b.status);
+
+  const box = (arrival: string, departure: string) => {
+    const from = Math.max(0, nightsBetween(start, arrival));
+    const to = Math.min(length, nightsBetween(start, departure));
+    if (to <= 0 || from >= length) return null;
+    // Stays run from mid-day of arrival to mid-day of departure.
+    const left = from + (arrival >= start ? 0.5 : 0);
+    const right = Math.min(length, to + (departure <= end ? 0.5 : 0));
+    return { left: `${(left / length) * 100}%`, width: `calc(${((right - left) / length) * 100}% - 3px)` };
+  };
+
+  /** Where the held stay would land now, and why it could not, checked against what is on screen. */
+  const landing = (d: Drag) => {
+    const { booking: b, part, days: n } = d;
+    const arrival = part === 'end' ? b.arrival : addDays(b.arrival, n);
+    const departure = part === 'start' ? b.departure : addDays(b.departure, n);
+    const row = rows.find((r) => r.key === d.rowKey)!;
+    const taken = row.roomId && q.data!.reservations.some((r) => r.id !== b.id && r.status !== 'checked_out' && r.roomId === row.roomId && r.arrival < departure && r.departure > arrival);
+    const room = q.data!.rooms.find((r) => r.id === row.roomId);
+    const problem =
+      row.roomTypeId !== b.roomTypeId
+        ? 'calendar.dropOtherType'
+        : inHouse(b) && !row.roomId
+          ? 'calendar.dropNeedsRoom'
+          : room?.status === 'out_of_order'
+            ? 'calendar.dropOutOfOrder'
+            : (inHouse(b) ? departure !== b.departure && departure <= property.businessDate : arrival < property.businessDate)
+              ? 'calendar.dropPast'
+              : taken
+                ? 'calendar.dropTaken'
+                : null;
+    return { arrival, departure, row, problem };
+  };
+
+  const grab = (e: ReactPointerEvent<HTMLAnchorElement>, b: Booking, rowKey: string) => {
+    justDragged.current = false;
+    if (e.button !== 0 || e.pointerType === 'touch' || e.metaKey || e.ctrlKey || e.shiftKey || !canDrag(b)) return;
+    const part = ((e.target as HTMLElement).dataset.edge ?? 'move') as Drag['part'];
+    const track = e.currentTarget.closest<HTMLElement>('[data-row]')!;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDrag({ booking: b, part, fromX: e.clientX, dayWidth: track.offsetWidth / length, days: 0, rowKey, x: e.clientX, y: e.clientY, moved: false });
+  };
+
+  const follow = (e: ReactPointerEvent) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.fromX;
+    if (!drag.moved && Math.abs(dx) < 5 && Math.abs(e.clientY - drag.y) < 5) return;
+    const nights = nightsBetween(drag.booking.arrival, drag.booking.departure);
+    // An in-house guest has already arrived: the whole stay can change rooms, but not dates.
+    const n = inHouse(drag.booking) && drag.part === 'move' ? 0 : Math.round(dx / drag.dayWidth);
+    const over = drag.part === 'move' ? document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-row]')?.dataset.row : undefined;
+    setDrag({
+      ...drag,
+      moved: true,
+      // Pulling an end never leaves a stay with less than one night.
+      days: drag.part === 'start' ? Math.min(n, nights - 1) : drag.part === 'end' ? Math.max(n, 1 - nights) : n,
+      rowKey: over ?? drag.rowKey,
+      x: e.clientX,
+      y: e.clientY,
+    });
+  };
+
+  const release = () => {
+    if (!drag) return;
+    setDrag(null);
+    if (!drag.moved) return;
+    justDragged.current = true;
+    const { arrival, departure, row, problem } = landing(drag);
+    const b = drag.booking;
+    const roomChanged = row.roomId !== b.roomId;
+    if (problem || (arrival === b.arrival && departure === b.departure && !roomChanged)) return;
+    setPendingMove({
+      id: b.id,
+      guestName: b.guestName,
+      ...(arrival !== b.arrival && { arrival }),
+      ...(departure !== b.departure && { departure }),
+      ...(roomChanged && { roomId: row.roomId }),
+    } as StayMove);
+  };
+
+  const held = drag?.moved ? { ...landing(drag), drag } : null;
+
   return (
-    <Card padded={false}>
-      <div className="overflow-x-auto">
-        <div className={clsx('grid', dense ? 'min-w-[1180px]' : 'min-w-[820px]')} style={{ gridTemplateColumns: `104px repeat(${length}, minmax(0, 1fr))` }}>
-          <div className="sticky left-0 z-20 border-b border-line bg-surface" />
-          {days.map((d) => (
-            <div
-              key={d}
-              className={clsx(
-                'border-b border-l border-line px-0.5 py-2 text-center text-[11px] leading-tight',
-                d === property.businessDate ? 'bg-brand-soft font-semibold text-on-brand-soft' : [0, 6].includes(weekday(d)) ? 'bg-subtle text-muted' : 'text-muted',
-              )}
-            >
-              <span className="block">{dayName.format(utc(d))}</span>
-              <span className="block font-medium">{d.slice(8)}</span>
-            </div>
-          ))}
-          {rows.map((row) => {
-            const bookings = q.data!.reservations.filter((r) => (row.roomId ? r.roomId === row.roomId : !r.roomId && r.roomTypeId === row.roomTypeId));
-            const { lane, lanes } = row.roomId ? { lane: new Map<string, number>(), lanes: 1 } : stack(bookings);
-            return (
-              <Fragment key={row.key}>
-                <div className={clsx('sticky left-0 z-20 border-b border-line bg-surface px-3 py-2 text-sm', row.muted ? 'text-xs text-muted italic' : 'font-semibold')}>{row.label}</div>
-                <div className="relative border-b border-line" style={{ gridColumn: `2 / span ${length}` }}>
-                  <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${length}, 1fr)` }}>
-                    {days.map((d) =>
-                      d >= property.businessDate && can('reservations.create') ? (
-                        <Link
-                          key={d}
-                          href={`/reservations/new?arrival=${d}`}
-                          aria-label={`${t('reservations.new')} ${date(d, locale)}`}
-                          className={clsx('border-l border-line hover:bg-brand-soft', d === property.businessDate && 'bg-brand-soft/60')}
+    <>
+      <Card padded={false}>
+        <div className="overflow-x-auto">
+          <div className={clsx('grid', dense ? 'min-w-[1180px]' : 'min-w-[820px]')} style={{ gridTemplateColumns: `104px repeat(${length}, minmax(0, 1fr))` }}>
+            <div className="sticky left-0 z-20 border-b border-line bg-surface" />
+            {days.map((d) => (
+              <div
+                key={d}
+                className={clsx(
+                  'border-b border-l border-line px-0.5 py-2 text-center text-[11px] leading-tight',
+                  d === property.businessDate ? 'bg-brand-soft font-semibold text-on-brand-soft' : [0, 6].includes(weekday(d)) ? 'bg-subtle text-muted' : 'text-muted',
+                )}
+              >
+                <span className="block">{dayName.format(utc(d))}</span>
+                <span className="block font-medium">{d.slice(8)}</span>
+              </div>
+            ))}
+            {rows.map((row) => {
+              const bookings = q.data!.reservations.filter((r) => (row.roomId ? r.roomId === row.roomId : !r.roomId && r.roomTypeId === row.roomTypeId));
+              const { lane, lanes } = row.roomId ? { lane: new Map<string, number>(), lanes: 1 } : stack(bookings);
+              return (
+                <Fragment key={row.key}>
+                  <div className={clsx('sticky left-0 z-20 border-b border-line bg-surface px-3 py-2 text-sm', row.muted ? 'text-xs text-muted italic' : 'font-semibold')}>{row.label}</div>
+                  <div data-row={row.key} className="relative border-b border-line" style={{ gridColumn: `2 / span ${length}` }}>
+                    <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${length}, 1fr)` }}>
+                      {days.map((d) =>
+                        d >= property.businessDate && can('reservations.create') ? (
+                          <Link
+                            key={d}
+                            href={`/reservations/new?arrival=${d}`}
+                            aria-label={`${t('reservations.new')} ${date(d, locale)}`}
+                            className={clsx('border-l border-line hover:bg-brand-soft', d === property.businessDate && 'bg-brand-soft/60')}
+                          />
+                        ) : (
+                          <div key={d} className={clsx('border-l border-line', d === property.businessDate && 'bg-brand-soft/60')} />
+                        ),
+                      )}
+                    </div>
+                    <div className="pointer-events-none relative" style={{ height: 8 + lanes * 32 }}>
+                      {bookings.map((b) => {
+                        const position = box(b.arrival, b.departure);
+                        if (!position) return null;
+                        return (
+                          <Link
+                            key={b.id}
+                            href={`/reservations/${b.id}`}
+                            draggable={false}
+                            data-selected={b.id === selected ? '' : undefined}
+                            onPointerDown={(e) => grab(e, b, row.key)}
+                            onPointerMove={follow}
+                            onPointerUp={release}
+                            onPointerCancel={() => setDrag(null)}
+                            onClick={(e) => {
+                              if (justDragged.current) return e.preventDefault();
+                              // Ctrl/Cmd+click still opens the full reservation in a new tab.
+                              if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+                              e.preventDefault();
+                              onSelect(b.id);
+                            }}
+                            title={`${b.guestName} · ${b.code} · ${date(b.arrival, locale)} – ${date(b.departure, locale)}`}
+                            className={clsx(
+                              'pointer-events-auto absolute truncate rounded-sm px-2 text-xs leading-7 font-medium select-none hover:brightness-95',
+                              canDrag(b) && 'cursor-grab active:cursor-grabbing',
+                              held?.drag.booking.id === b.id && 'opacity-40',
+                              b.id === selected ? 'z-10 bg-orange-500 text-white shadow-md ring-2 ring-orange-300' : (barColor[b.status] ?? 'bg-subtle text-muted'),
+                            )}
+                            style={{ ...position, top: 6 + (lane.get(b.id) ?? 0) * 32 }}
+                          >
+                            {canDrag(b) && !inHouse(b) && b.arrival >= start && <span data-edge="start" className="absolute inset-y-0 left-0 w-2 cursor-ew-resize" />}
+                            {b.guestName}
+                            {canDrag(b) && b.departure <= end && <span data-edge="end" className="absolute inset-y-0 right-0 w-2 cursor-ew-resize" />}
+                          </Link>
+                        );
+                      })}
+                      {held?.row.key === row.key && box(held.arrival, held.departure) && (
+                        <div
+                          className={clsx('absolute z-10 h-7 rounded-sm border-2 border-dashed', held.problem ? 'border-danger bg-danger-soft' : 'border-orange-500 bg-orange-500/20')}
+                          style={{ ...box(held.arrival, held.departure), top: 6 }}
                         />
-                      ) : (
-                        <div key={d} className={clsx('border-l border-line', d === property.businessDate && 'bg-brand-soft/60')} />
-                      ),
-                    )}
+                      )}
+                    </div>
                   </div>
-                  <div className="pointer-events-none relative" style={{ height: 8 + lanes * 32 }}>
-                    {bookings.map((b) => {
-                      const from = Math.max(0, nightsBetween(start, b.arrival));
-                      const to = Math.min(length, nightsBetween(start, b.departure));
-                      if (to <= 0 || from >= length) return null;
-                      // Stays run from mid-day of arrival to mid-day of departure.
-                      const left = from + (b.arrival >= start ? 0.5 : 0);
-                      const right = Math.min(length, to + (b.departure <= end ? 0.5 : 0));
-                      return (
-                        <Link
-                          key={b.id}
-                          href={`/reservations/${b.id}`}
-                          data-selected={b.id === selected ? '' : undefined}
-                          onClick={(e) => {
-                            // Ctrl/Cmd+click still opens the full reservation in a new tab.
-                            if (e.metaKey || e.ctrlKey || e.shiftKey) return;
-                            e.preventDefault();
-                            onSelect(b.id);
-                          }}
-                          title={`${b.guestName} · ${b.code} · ${date(b.arrival, locale)} – ${date(b.departure, locale)}`}
-                          className={clsx(
-                            'pointer-events-auto absolute truncate rounded-sm px-2 text-xs leading-7 font-medium hover:brightness-95',
-                            b.id === selected ? 'z-10 bg-orange-500 text-white shadow-md ring-2 ring-orange-300' : (barColor[b.status] ?? 'bg-subtle text-muted'),
-                          )}
-                          style={{ left: `${(left / length) * 100}%`, width: `calc(${((right - left) / length) * 100}% - 3px)`, top: 6 + (lane.get(b.id) ?? 0) * 32 }}
-                        >
-                          {b.guestName}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              </Fragment>
-            );
-          })}
+                </Fragment>
+              );
+            })}
+          </div>
         </div>
-      </div>
-    </Card>
+      </Card>
+      {movable && <p className="mt-2 text-xs text-muted">{t('calendar.dragHint')}</p>}
+      {held && (
+        <div
+          className={clsx('pointer-events-none fixed z-50 rounded-md px-2 py-1 text-xs font-medium whitespace-nowrap shadow-md', held.problem ? 'bg-danger text-on-danger' : 'bg-ink text-surface')}
+          style={{ left: held.drag.x + 14, top: held.drag.y + 16 }}
+        >
+          {held.problem
+            ? t(held.problem)
+            : `${date(held.arrival, locale)} – ${date(held.departure, locale)} · ${nightsBetween(held.arrival, held.departure)} ${t('calendar.nights')} · ${held.row.label}`}
+        </div>
+      )}
+      {pendingMove && (
+        <MoveStayDialog
+          key={pendingMove.id}
+          move={pendingMove}
+          onClose={() => setPendingMove(null)}
+          onMoved={() => {
+            onSelect(pendingMove.id);
+            return Promise.all(['calendar', 'calendar-year', 'reservation'].map((key) => qc.invalidateQueries({ queryKey: [key] })));
+          }}
+        />
+      )}
+    </>
   );
 }
 

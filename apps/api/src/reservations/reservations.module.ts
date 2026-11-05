@@ -9,6 +9,7 @@ import {
   checkOutSchema,
   createReservationSchema,
   isoDate,
+  moveReservationSchema,
   reservationSearchSchema,
   updateReservationSchema,
 } from '@pms/shared';
@@ -68,6 +69,13 @@ export class ReservationsController {
   @Perms('reservations.update')
   update(@IdParam() id: string, @ZBody(updateReservationSchema) body: z.infer<typeof updateReservationSchema>) {
     return this.svc.update(id, body);
+  }
+
+  @Post('reservations/:id/move-preview')
+  @Perms('reservations.update')
+  @HttpCode(200)
+  previewMove(@IdParam() id: string, @ZBody(moveReservationSchema) body: z.infer<typeof moveReservationSchema>) {
+    return this.svc.previewMove(id, body);
   }
 
   @Post('reservations/:id/cancel')

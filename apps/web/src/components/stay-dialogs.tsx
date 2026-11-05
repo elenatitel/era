@@ -227,3 +227,86 @@ export function CheckOutDialog({ reservationId, title, onClose }: { reservationI
     </Modal>
   );
 }
+
+export interface StayMove {
+  id: string;
+  guestName: string;
+  arrival: string;
+  departure: string;
+  /** Left out when the room stays the same; null takes the stay off its room. */
+  roomId?: string | null;
+}
+
+interface MovePreview {
+  currency: string;
+  source: string;
+  guestMoves: boolean;
+  roomNotReady: boolean;
+  needsNewDoorPin: boolean;
+  before: { arrival: string; departure: string; roomNumber: string | null; total: number };
+  after: { arrival: string; departure: string; roomNumber: string | null; total: number };
+}
+
+/** Confirms a move from the calendar, showing what changes, the price above all. */
+export function MoveStayDialog({ move, onClose, onMoved }: { move: StayMove; onClose: () => void; onMoved: () => Promise<unknown> }) {
+  const { t, locale } = useI18n();
+  const { id, guestName, ...change } = move;
+  const preview = useQuery({
+    queryKey: ['move-preview', move],
+    queryFn: () => api.post<MovePreview>(`/reservations/${id}/move-preview`, change),
+    retry: false,
+    gcTime: 0,
+  });
+  const save = useMutation({
+    mutationFn: () => api.patch(`/reservations/${id}`, { ...change, allowDirtyRoom: preview.data?.roomNotReady }),
+    onSuccess: async () => {
+      await onMoved();
+      onClose();
+    },
+  });
+  const friendly = (error: unknown) => {
+    if (error instanceof ApiError && error.code === 'ROOM_CONFLICT') return new ApiError(error.status, error.code, t('calendar.moveRoomTaken'));
+    if (error instanceof ApiError && error.code === 'NO_AVAILABILITY') return new ApiError(error.status, error.code, t('calendar.moveNoRooms'));
+    return error;
+  };
+  const p = preview.data;
+  const stay = (s: MovePreview['before']) => `${date(s.arrival, locale)} – ${date(s.departure, locale)}`;
+  const room = (s: MovePreview['before']) => s.roomNumber ?? t('calendar.noRoom');
+  const rows = p && ([
+    [t('calendar.period'), stay(p.before), stay(p.after)],
+    [t('calendar.room'), room(p.before), room(p.after)],
+    [t('calendar.total'), money(p.before.total, p.currency, locale), money(p.after.total, p.currency, locale)],
+  ] as const).filter(([, before, after]) => before !== after);
+  return (
+    <Modal open onClose={onClose} title={t('calendar.moveTitle')}>
+      <div className="space-y-4">
+        <p className="font-medium">{guestName}</p>
+        <ErrorText error={friendly(preview.error ?? save.error)} />
+        {preview.isLoading && <Spinner />}
+        {p && (
+          <>
+            <dl className="space-y-2 text-sm">
+              {rows!.map(([label, before, after]) => (
+                <div key={label} className="flex flex-wrap justify-between gap-x-4">
+                  <dt className="text-muted">{label}</dt>
+                  <dd>
+                    <span className="text-muted line-through">{before}</span> <span className="font-semibold">{after}</span>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <p className="text-xs text-muted">{t(p.before.total === p.after.total ? 'calendar.samePrice' : 'calendar.priceRule')}</p>
+            {p.guestMoves && <p className="text-xs text-muted">{t('calendar.moveFreesRoom')}</p>}
+            {p.roomNotReady && <Alert tone="amber">{t('calendar.moveDirtyRoom')}</Alert>}
+            {p.needsNewDoorPin && <Alert tone="amber">{t('calendar.moveDoorPin')}</Alert>}
+            {['ota', 'agent'].includes(p.source) && stay(p.before) !== stay(p.after) && <Alert tone="amber">{t('calendar.moveChannel', { source: t(`sources.${p.source}`) })}</Alert>}
+          </>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button autoFocus disabled={!p} loading={save.isPending} onClick={() => save.mutate()}>{t('calendar.moveConfirm')}</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
