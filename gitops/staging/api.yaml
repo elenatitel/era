@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: harbor.cloud.retreat480.com/era
     chart: era-api
-    targetRevision: 0.1.0-ci.35.1
+    targetRevision: 0.1.0-ci.38.1
     helm:
       releaseName: era-api
   destination:
