@@ -38,6 +38,12 @@ async function balances(tx: Tx, ids: string[]) {
   return new Map(rows.rows.map((r) => [r.id, Number(r.balance)]));
 }
 
+type Turnover = 'leaving' | 'cleaning' | 'ready';
+/** How far a room is from taking its next guest: someone may still be in it, or it may need cleaning. */
+const turnover = (room: { occupancy: string; status: string }): Turnover =>
+  room.occupancy === 'occupied' ? 'leaving' : room.status === 'dirty' ? 'cleaning' : 'ready';
+const SOONEST: Record<Turnover, number> = { ready: 0, cleaning: 1, leaving: 2 };
+
 /**
  * Live views for the redesigned home: the house (rooms by floor, who is where, who is coming),
  * the day (everything that happens today on one timeline) and the night shift (what stands
@@ -117,12 +123,25 @@ export class LiveService {
         };
       });
 
-      // Arrivals with no room yet: suggest a free room of their type, preferring one already clean.
+      // Arrivals with no room yet: suggest the room of their type that can be ready soonest.
+      // A room that is free tonight can still hold a guest who leaves today, so that comes last.
       const suggestions = [];
+      const promised = new Set<string>();
       for (const a of arriving.filter((s) => !s.room_id)) {
-        const free = await freeRooms(tx, a.room_type_id, a.arrival, a.departure);
-        const pick = free.find((f) => f.status !== 'dirty' && f.occupancy === 'vacant') ?? free[0];
-        if (pick) suggestions.push({ reservationId: a.id, guestName: names ? a.guest : null, time: arrivalTime(a.estimated_arrival, property.checkInTime), roomId: pick.id, number: pick.number, ready: pick.status !== 'dirty' });
+        const free = (await freeRooms(tx, a.room_type_id, a.arrival, a.departure)).filter((f) => !promised.has(f.id));
+        const pick = free.sort((x, y) => SOONEST[turnover(x)] - SOONEST[turnover(y)])[0];
+        if (!pick) continue;
+        promised.add(pick.id);
+        const leaving = inHouse.find((s) => s.room_id === pick.id);
+        suggestions.push({
+          reservationId: a.id,
+          guestName: names ? a.guest : null,
+          time: arrivalTime(a.estimated_arrival, property.checkInTime),
+          roomId: pick.id,
+          number: pick.number,
+          step: turnover(pick),
+          leavingGuest: names && leaving ? leaving.guest : null,
+        });
       }
 
       const crews = await tx.execute<{ name: string | null; open: number; done: number; floors: string[] }>(sql`
@@ -135,6 +154,11 @@ export class LiveService {
 
       const sellable = roomsOut.filter((r) => r.state !== 'out').length;
       const occupied = roomsOut.filter((r) => r.state === 'in_house').length;
+      // Tonight is not now: guests leaving today no longer count and arrivals already do, as in the forecast.
+      const staying = await tx.execute<{ n: number }>(sql`
+        select count(*)::int as n from ${reservations} r where r.property_id = ${propertyId}
+          and r.status in ('tentative', 'confirmed', 'checked_in') and r.arrival <= ${day} and r.departure > ${day}`);
+      const tonight = staying.rows[0]!.n;
       return {
         businessDate: day,
         currency: property.currency,
@@ -144,6 +168,9 @@ export class LiveService {
           sellable,
           occupied,
           occupancy: sellable ? Math.round((occupied / sellable) * 100) : 0,
+          tonight,
+          occupancyTonight: sellable ? Math.round((tonight / sellable) * 100) : 0,
+          freeTonight: Math.max(sellable - tonight, 0),
           ready: roomsOut.filter((r) => r.state === 'ready').length,
           dirty: roomsOut.filter((r) => r.state === 'dirty').length,
           free: roomsOut.filter((r) => r.state === 'free').length,
@@ -160,7 +187,7 @@ export class LiveService {
                   guestName: a.guest,
                   time: arrivalTime(a.estimated_arrival, property.checkInTime),
                   roomNumber: room?.number ?? null,
-                  roomReady: room ? room.status !== 'dirty' && room.status !== 'out_of_order' : false,
+                  roomStep: room ? turnover(room) : null,
                   roomType: a.type_name,
                   ratePlan: a.plan,
                   nights: Math.round((Date.parse(a.departure) - Date.parse(a.arrival)) / 86_400_000),

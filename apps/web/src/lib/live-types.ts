@@ -1,4 +1,5 @@
 export type RoomState = 'in_house' | 'ready' | 'dirty' | 'free' | 'out';
+export type TurnoverStep = 'leaving' | 'cleaning' | 'ready';
 
 export interface HouseRoom {
   id: string;
@@ -18,7 +19,7 @@ export interface HouseArrival {
   guestName: string;
   time: string;
   roomNumber: string | null;
-  roomReady: boolean;
+  roomStep: TurnoverStep | null;
   roomType: string;
   ratePlan: string;
   nights: number;
@@ -32,9 +33,9 @@ export interface House {
   currency: string;
   timezone: string;
   rooms: HouseRoom[];
-  counts: { sellable: number; occupied: number; occupancy: number; ready: number; dirty: number; free: number; guestsInHouse: number; departuresLeft: number };
+  counts: { sellable: number; occupied: number; occupancy: number; tonight: number; occupancyTonight: number; freeTonight: number; ready: number; dirty: number; free: number; guestsInHouse: number; departuresLeft: number };
   arrivals: HouseArrival[];
-  suggestions: { reservationId: string; guestName: string | null; time: string; roomId: string; number: string; ready: boolean }[];
+  suggestions: { reservationId: string; guestName: string | null; time: string; roomId: string; number: string; step: TurnoverStep; leavingGuest: string | null }[];
   housekeeping: { name: string | null; open: number; done: number; floors: string[] }[];
 }
 

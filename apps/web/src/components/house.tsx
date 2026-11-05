@@ -4,14 +4,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Check, ChevronRight, Sparkles } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { Emph } from '@/components/night-audit';
-import { CheckInDialog } from '@/components/stay-dialogs';
+import { CheckInDialog, CheckOutDialog } from '@/components/stay-dialogs';
 import { Badge, Button, ErrorText, Spinner, Stat } from '@/components/ui';
 import { api } from '@/lib/api';
 import { date, money } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
-import type { House, HouseRoom, RoomState } from '@/lib/live-types';
+import type { House, HouseRoom, RoomState, TurnoverStep } from '@/lib/live-types';
 import { useSession } from '@/lib/session';
 import type { Property } from '@/lib/types';
 
@@ -39,13 +40,37 @@ export function useHouse(propertyId: string) {
   });
 }
 
+/** One room between two guests: who leaves, the cleaning, who arrives. The current step stands out. */
+function Turnover({ step, leaving, arriving }: { step: TurnoverStep; leaving: string | null; arriving: string }) {
+  const { t } = useI18n();
+  const order: TurnoverStep[] = ['leaving', 'cleaning', 'ready'];
+  const current = order.indexOf(step);
+  const labels = { leaving: leaving ? t('house.stepLeavingGuest', { guest: leaving }) : t('house.stepLeaving'), cleaning: t('house.stepCleaning'), ready: arriving };
+  return (
+    <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+      {order.map((s, i) =>
+        s === 'leaving' && !leaving && step !== 'leaving' ? null : (
+          <li key={s} className={clsx('inline-flex items-center gap-1', i === current ? 'font-semibold' : 'opacity-60')} aria-current={i === current ? 'step' : undefined}>
+            {i > 0 && (s !== 'cleaning' || leaving || step === 'leaving') && <ChevronRight size={12} aria-hidden />}
+            {i < current && <Check size={12} aria-hidden />}
+            {labels[s]}
+          </li>
+        ),
+      )}
+    </ol>
+  );
+}
+
 /** The home screen: the hotel drawn as a building, every window a room in its live state. */
 export function HouseHome({ property }: { property: Property }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { can } = useSession();
+  const router = useRouter();
   const q = useHouse(property.id);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [focusArrival, setFocusArrival] = useState<string | null>(null);
   const [checkIn, setCheckIn] = useState<{ id: string; name: string } | null>(null);
+  const [checkOut, setCheckOut] = useState<{ id: string; name: string } | null>(null);
 
   const floors = useMemo(() => {
     const map = new Map<string, HouseRoom[]>();
@@ -58,15 +83,28 @@ export function HouseHome({ property }: { property: Property }) {
   const h = q.data;
   const selected = h.rooms.find((r) => r.id === selectedId) ?? h.rooms.find((r) => r.arrival) ?? null;
   const arrivalsLeft = h.arrivals.length;
+  const leavingRooms = h.rooms.filter((r) => r.stay?.departsToday);
+  const suggestion = h.suggestions.find((s) => s.reservationId === focusArrival) ?? h.suggestions[0];
+  const links = can('reservations.read');
+  /** An arrival leads to its room; without one, to the room era. suggests, or to the reservation. */
+  const openArrival = (reservationId: string) => {
+    const room = h.rooms.find((r) => r.arrival?.reservationId === reservationId);
+    const suggested = h.suggestions.find((s) => s.reservationId === reservationId);
+    if (room) setSelectedId(room.id);
+    else if (suggested) {
+      setFocusArrival(reservationId);
+      setSelectedId(suggested.roomId);
+    } else router.push(`/reservations/${reservationId}`);
+  };
 
   return (
     <div className="flex flex-col gap-5">
       <section aria-label={t('house.insights')} className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
-        <Stat highlight label={t('dashboard.occupancy')} value={`${h.counts.occupancy}%`} hint={`${t('house.occupiedTonight')} · ${h.counts.occupied}/${h.counts.sellable}`} />
-        <Stat label={t('house.arrivalsLeft')} value={arrivalsLeft} hint={t('house.legend.ready').toLowerCase() + ` · ${h.counts.ready}`} />
-        <Stat label={t('house.departuresLeft')} value={h.counts.departuresLeft} />
-        <Stat label={t('house.guestsInHouse')} value={h.counts.guestsInHouse} />
-        <Stat label={t('house.free')} value={h.counts.free} hint={`${t('house.legend.dirty').toLowerCase()} · ${h.counts.dirty}`} />
+        <Stat highlight href={links ? '/calendar' : undefined} label={t('dashboard.occupancy')} value={`${h.counts.occupancyTonight}%`} hint={`${t('house.occupiedTonight')} · ${h.counts.tonight}/${h.counts.sellable}`} />
+        <Stat href={links ? '/front-desk' : undefined} label={t('house.arrivalsLeft')} value={arrivalsLeft} hint={t('house.legend.ready').toLowerCase() + ` · ${h.counts.ready}`} />
+        <Stat href={links ? '/front-desk' : undefined} label={t('house.departuresLeft')} value={h.counts.departuresLeft} />
+        <Stat href={links ? '/front-desk' : undefined} label={t('house.guestsInHouse')} value={h.counts.guestsInHouse} />
+        <Stat href={links ? '/calendar' : undefined} label={t('house.free')} value={h.counts.freeTonight} hint={`${t('house.legend.dirty').toLowerCase()} · ${h.counts.dirty}`} />
       </section>
 
       <div className="flex flex-wrap items-stretch gap-5">
@@ -94,7 +132,7 @@ export function HouseHome({ property }: { property: Property }) {
                       type="button"
                       onClick={() => setSelectedId(r.id)}
                       aria-pressed={selected?.id === r.id}
-                      aria-label={`${r.number}, ${t(`house.states.${r.state}`)}`}
+                      aria-label={`${r.number}, ${r.stay?.departsToday ? t('house.leavesToday') : t(`house.states.${r.state}`)}`}
                       className={clsx(
                         'flex min-h-[76px] flex-col items-start justify-between rounded-[10px] px-2.5 py-2 text-left transition hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
                         WINDOW[r.state],
@@ -102,7 +140,7 @@ export function HouseHome({ property }: { property: Property }) {
                       )}
                     >
                       <span className="text-[15px] font-semibold tabular-nums">{r.number}</span>
-                      <span className="text-[11px] leading-tight">{t(`house.states.${r.state}`)}</span>
+                      <span className="text-[11px] leading-tight">{r.stay?.departsToday ? t('house.leavesToday') : t(`house.states.${r.state}`)}</span>
                     </button>
                   ))}
                 </div>
@@ -133,7 +171,7 @@ export function HouseHome({ property }: { property: Property }) {
 
         {/* Selected room */}
         <aside className="flex min-w-0 flex-[1_1_250px] flex-col gap-5 min-[1380px]:-order-1">
-          <RoomPanel room={selected} currency={h.currency} onCheckIn={(id, name) => setCheckIn({ id, name })} />
+          <RoomPanel room={selected} currency={h.currency} onCheckIn={(id, name) => setCheckIn({ id, name })} onCheckOut={(id, name) => setCheckOut({ id, name })} />
           <section className="flex flex-col gap-2.5 rounded-[28px] bg-surface p-5">
             <h2 className="text-base font-semibold">{t('house.onFloors')}</h2>
             {h.housekeeping.length === 0 && <p className="text-sm text-muted">{t('house.hkNone')}</p>}
@@ -165,30 +203,24 @@ export function HouseHome({ property }: { property: Property }) {
                 <span className="text-xs text-muted">{t('house.today', { n: arrivalsLeft })}</span>
               </div>
               {h.arrivals.length === 0 && <p className="text-sm text-muted">{t('house.noneComing')}</p>}
-              {h.arrivals.slice(0, 6).map((a) => {
-                const room = h.rooms.find((r) => r.arrival?.reservationId === a.reservationId);
-                return (
-                  <button
-                    key={a.reservationId}
-                    type="button"
-                    onClick={() => room && setSelectedId(room.id)}
-                    className="flex items-center gap-3 border-t border-line py-2.5 text-left first-of-type:border-t-0"
-                  >
-                    <span className="w-12 shrink-0 font-semibold tabular-nums">{a.time}</span>
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate font-semibold">{a.guestName}</span>
-                      <span className="truncate text-xs text-muted">
-                        {a.roomNumber ? `${a.roomNumber} · ${a.roomReady ? t('house.states.ready') : t('house.states.dirty')}` : t('day.noRoom')}
-                      </span>
+              {h.arrivals.slice(0, 6).map((a) => (
+                <button key={a.reservationId} type="button" onClick={() => openArrival(a.reservationId)} className="flex items-center gap-3 border-t border-line py-2.5 text-left first-of-type:border-t-0">
+                  <span className="w-12 shrink-0 font-semibold tabular-nums">{a.time}</span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-semibold">{a.guestName}</span>
+                    <span className="truncate text-xs text-muted">
+                      {a.roomNumber && a.roomStep
+                        ? `${a.roomNumber} · ${a.roomStep === 'leaving' ? t('house.stepLeaving') : a.roomStep === 'cleaning' ? t('house.states.dirty') : t('house.states.ready')}`
+                        : t('day.noRoom')}
                     </span>
-                    {a.onlineCheckin && (
-                      <span className="grid h-7 w-7 place-items-center rounded-full bg-success-soft text-success" title={t('online.checkedInOnline')}>
-                        <Check size={14} strokeWidth={3} aria-label={t('online.checkedInOnline')} />
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+                  </span>
+                  {a.onlineCheckin && (
+                    <span className="grid h-7 w-7 place-items-center rounded-full bg-success-soft text-success" title={t('online.checkedInOnline')}>
+                      <Check size={14} strokeWidth={3} aria-label={t('online.checkedInOnline')} />
+                    </span>
+                  )}
+                </button>
+              ))}
               {h.arrivals.length > 6 && (
                 <Link href="/front-desk" className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-accent">
                   {t('dashboard.openFrontDesk')} <ChevronRight size={15} aria-hidden />
@@ -196,15 +228,36 @@ export function HouseHome({ property }: { property: Property }) {
               )}
             </section>
           )}
-          {h.suggestions[0] && <Noticed house={h} propertyId={property.id} />}
+          {suggestion && <Noticed key={suggestion.reservationId} suggestion={suggestion} propertyId={property.id} onAssigned={() => setSelectedId(suggestion.roomId)} />}
+          {can('reservations.read') && leavingRooms.length > 0 && (
+            <section className="flex flex-col rounded-[28px] bg-surface p-5">
+              <div className="mb-2 flex items-center justify-between">
+                <h2 className="text-base font-semibold">{t('house.leavingToday')}</h2>
+                <span className="text-xs text-muted">{leavingRooms.length}</span>
+              </div>
+              {leavingRooms.map((r) => (
+                <button key={r.id} type="button" onClick={() => setSelectedId(r.id)} className="flex items-center gap-3 border-t border-line py-2.5 text-left first-of-type:border-t-0">
+                  <span className="w-12 shrink-0 font-semibold tabular-nums">{r.number}</span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-semibold">{r.stay!.guestName}</span>
+                    <span className="truncate text-xs text-muted">
+                      {(r.stay!.balance ?? 0) > 0 ? t('house.due', { amount: money(r.stay!.balance, h.currency, locale) }) : t('house.settled')}
+                      {r.arrival && ` · ${r.arrival.time} ${r.arrival.guestName}`}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </section>
+          )}
         </aside>
       </div>
       {checkIn && <CheckInDialog reservationId={checkIn.id} title={`${t('frontDesk.checkIn')} · ${checkIn.name}`} onClose={() => setCheckIn(null)} />}
+      {checkOut && <CheckOutDialog reservationId={checkOut.id} title={`${t('house.checkOut')} · ${checkOut.name}`} onClose={() => setCheckOut(null)} />}
     </div>
   );
 }
 
-function RoomPanel({ room, currency, onCheckIn }: { room: HouseRoom | null; currency: string; onCheckIn: (id: string, name: string) => void }) {
+function RoomPanel({ room, currency, onCheckIn, onCheckOut }: { room: HouseRoom | null; currency: string; onCheckIn: (id: string, name: string) => void; onCheckOut: (id: string, name: string) => void }) {
   const { t, locale } = useI18n();
   const { can } = useSession();
   if (!room) return <section className="rounded-[28px] bg-surface p-5 text-sm text-muted">{t('house.pick')}</section>;
@@ -251,6 +304,15 @@ function RoomPanel({ room, currency, onCheckIn }: { room: HouseRoom | null; curr
           </div>
         </div>
       )}
+      {room.arrival && (
+        <div className="rounded-[18px] border border-line p-3">
+          <Turnover
+            step={room.state === 'in_house' ? 'leaving' : room.state === 'dirty' ? 'cleaning' : 'ready'}
+            leaving={room.stay?.guestName ?? null}
+            arriving={`${room.arrival.guestName ?? room.arrival.code} · ${room.arrival.time}`}
+          />
+        </div>
+      )}
       {room.arrival?.onlineCheckin && (
         <Badge tone="green" dot>
           {t('online.checkedInOnline')}
@@ -263,6 +325,12 @@ function RoomPanel({ room, currency, onCheckIn }: { room: HouseRoom | null; curr
               {t('house.checkIn')}
             </Button>
           )}
+          {room.stay?.departsToday && can('frontdesk.checkout') && <Button onClick={() => onCheckOut(room.stay!.reservationId, room.stay!.guestName ?? room.number)}>{t('house.checkOut')}</Button>}
+          {room.state === 'dirty' && room.arrival && (
+            <Link href="/housekeeping" className="inline-flex min-h-11 items-center justify-center rounded-full border border-line px-4 text-sm font-semibold hover:bg-subtle">
+              {t('house.openHousekeeping')}
+            </Link>
+          )}
           <Link href={`/reservations/${reservationId}`} className="inline-flex min-h-11 items-center justify-center rounded-full border border-line px-4 text-sm font-semibold hover:bg-subtle">
             {t('house.open')}
           </Link>
@@ -273,26 +341,30 @@ function RoomPanel({ room, currency, onCheckIn }: { room: HouseRoom | null; curr
 }
 
 /** The first arrival without a room, with era.'s pick of a free room of the booked type. */
-function Noticed({ house, propertyId }: { house: House; propertyId: string }) {
+function Noticed({ suggestion: s, propertyId, onAssigned }: { suggestion: House['suggestions'][number]; propertyId: string; onAssigned: () => void }) {
   const { t } = useI18n();
   const { can } = useSession();
   const qc = useQueryClient();
-  const s = house.suggestions[0]!;
   const assign = useMutation({
     mutationFn: () => api.patch(`/reservations/${s.reservationId}`, { roomId: s.roomId }),
     onSuccess: () => {
+      onAssigned();
       void qc.invalidateQueries({ queryKey: ['house', propertyId] });
       void qc.invalidateQueries({ queryKey: ['front-desk'] });
     },
   });
+  const stepText = s.step === 'ready' ? t('house.suggestionReady') : s.step === 'cleaning' ? t('house.suggestionDirty') : t('house.suggestionLeaving', { guest: s.leavingGuest ?? '—' });
   return (
     <section className="flex flex-col gap-3 rounded-[28px] bg-[#1b2438] p-5 text-white night:bg-[#262c3a]">
       <span className="inline-flex items-center gap-1.5 text-xs text-[#d6dcea]">
         <Sparkles size={14} aria-hidden /> {t('house.noticed')}
       </span>
       <p className="text-[17px] leading-6">
-        {t('house.suggestion', { guest: s.guestName ?? '—', time: s.time, room: s.number })} {s.ready ? t('house.suggestionReady') : t('house.suggestionDirty')}
+        {t('house.suggestion', { guest: s.guestName ?? '—', time: s.time, room: s.number })} {stepText}
       </p>
+      <div className="text-[#d6dcea]">
+        <Turnover step={s.step} leaving={s.leavingGuest} arriving={`${s.guestName ?? ''} · ${s.time}`} />
+      </div>
       <ErrorText error={assign.error} />
       {assign.isSuccess ? (
         <span className="text-sm text-sun">{t('house.assigned', { room: s.number })}</span>
