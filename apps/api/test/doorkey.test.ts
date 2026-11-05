@@ -112,6 +112,10 @@ test("ERA issues a QR only after check-in and native callback requires the servi
   assert.ok(r.body.qr.startsWith("data:image/png;base64,"));
   assert.equal((await validate(latestScope, "wrong")).status, 401);
   assert.equal((await validate()).status, 200);
+  const metadata = (await validate()).body;
+  assert.ok(metadata.roomName);
+  assert.ok(metadata.propertyName);
+  assert.ok(metadata.timezone);
   assert.equal(
     (await hk.post(`/reservations/${f.id}/doorkey/invitations`)).status,
     403,

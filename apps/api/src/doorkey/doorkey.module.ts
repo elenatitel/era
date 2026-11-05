@@ -268,6 +268,9 @@ export class DoorKeyService {
         throw new UnauthorizedException();
       return {
         validUntil: checkoutEpoch(r.departure, p.checkOutTime, p.timezone),
+        roomName: room.number,
+        propertyName: p.name,
+        timezone: p.timezone,
       };
     }, body.tenantId);
   }

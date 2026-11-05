@@ -23,7 +23,7 @@ export type Stay = {
   reservationId: string;
   version: number;
 };
-export type LiveStay = { validUntil: number };
+export type LiveStay = { validUntil: number; roomName?: string; propertyName?: string; timezone?: string };
 export type Options = {
   pool: pg.Pool;
   issuer: KeyObject;
@@ -325,6 +325,7 @@ export function createManager(o: Options) {
         protocol: 2,
         permit: p.toString("base64"),
         validUntil: until,
+        room: { name: live.roomName ?? null, propertyName: live.propertyName ?? null, timezone: live.timezone ?? null },
         door: {
           id: wire,
           name: d.name,
