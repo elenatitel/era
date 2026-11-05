@@ -45,6 +45,8 @@ const schema = z.object({
   /** Turns on AI summaries of guest profiles. Without it the feature stays off and nothing leaves the system. */
   ANTHROPIC_API_KEY: z.string().optional(),
   AI_MODEL: z.string().default('claude-opus-5-5'),
+  /** Ask era. questions one organization may ask in 24 hours. */
+  AI_DAILY_QUESTIONS: z.coerce.number().int().min(0).default(200),
   /** Testing only: send Claude API calls to a local fake. Ignored in production. */
   ANTHROPIC_API_BASE: z.url().optional(),
   /** Testing only: send Stripe API calls to a local fake (e.g. http://127.0.0.1:12111). Ignored in production. */

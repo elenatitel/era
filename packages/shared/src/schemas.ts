@@ -286,6 +286,8 @@ export const reservationSearchSchema = pagination.extend({
 export const calendarSchema = z.object({ propertyId: id, from: isoDate, to: isoDate });
 export const calendarYearSchema = z.object({ propertyId: id, year: z.coerce.number().int().min(2000).max(2100) });
 
+export const askSchema = z.object({ propertyId: id, question: z.string().trim().min(3).max(500), locale: z.enum(['ro', 'en']).default('en') });
+
 // ---------- folio, payments, invoices ----------
 export const postChargeSchema = z.object({
   category: z.enum(CHARGE_CATEGORIES),

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { createContext, type FormEvent, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { NightAuditDialog, useNight } from '@/components/night-audit';
 import { Button, ErrorText, Spinner } from '@/components/ui';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { date, money } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { House } from '@/lib/live-types';
@@ -15,8 +15,8 @@ import { useSession } from '@/lib/session';
 type Intent = 'owes' | 'arrivals' | 'breakfast' | 'audit' | 'search';
 
 /**
- * What the question is about. Ask era. answers a fixed set of questions from live data
- * (no AI provider, nothing leaves the system); anything else becomes a search.
+ * What the question is about. The fixed questions are answered from live data, with no AI
+ * provider involved, and so is everything else when the agent is off or unavailable.
  */
 export function intentOf(question: string): Intent {
   const q = question
@@ -28,6 +28,11 @@ export function intentOf(question: string): Intent {
   if (/(night audit|audit|close the day|inchiderea|inchide ziua)/.test(q)) return 'audit';
   if (/\b(arriv|coming|sosire|sosiri|soseste|sosesc)/.test(q)) return 'arrivals';
   return 'search';
+}
+
+/** Short lookups and the fixed questions stay instant and free; sentences go to the agent. */
+export function forAgent(question: string, fixed: string[]) {
+  return question.trim().split(/\s+/).length >= 3 && !fixed.includes(question);
 }
 
 const AskContext = createContext<{ open: (question?: string) => void }>({ open: () => undefined });
@@ -87,6 +92,7 @@ function AskPanel({ initial, onClose }: { initial: string; onClose: () => void }
     setAsked(draft.trim());
   };
   const suggestions = t('ask.suggestions').split('|');
+  const agent = useAgent();
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 pt-[12vh] backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={panel} role="dialog" aria-modal="true" aria-label={t('ask.title')} className="flex max-h-[76vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] bg-surface text-ink shadow-pop">
@@ -113,10 +119,10 @@ function AskPanel({ initial, onClose }: { initial: string; onClose: () => void }
         </form>
         <div className="overflow-y-auto p-5">
           {asked ? (
-            <Answer question={asked} onDone={onClose} />
+            agent && forAgent(asked, suggestions) ? <AgentAnswer key={asked} question={asked} onDone={onClose} /> : <Answer question={asked} onDone={onClose} />
           ) : (
             <div className="flex flex-col gap-3">
-              <p className="text-sm text-muted">{t('ask.hint')}</p>
+              <p className="text-sm text-muted">{t(agent ? 'ask.hintAgent' : 'ask.hint')}</p>
               <div className="flex flex-wrap gap-2">
                 {suggestions.map((s) => (
                   <button
@@ -150,6 +156,79 @@ function Row({ href, icon, title, sub, end, onDone }: { href: string; icon: Reac
       </span>
       {end}
     </Link>
+  );
+}
+
+function useAgent() {
+  const { can } = useSession();
+  const status = useQuery({
+    queryKey: ['ask-status'],
+    queryFn: () => api.get<{ enabled: boolean }>('/ask/status'),
+    enabled: can('property.read'),
+    staleTime: 5 * 60_000,
+  });
+  return status.data?.enabled ?? false;
+}
+
+interface AgentReply {
+  answer: string;
+  tools: string[];
+  stays: { id: string; guestName: string | null; code: string | null; room: string | null }[];
+}
+
+/** Each answer costs money, so it is asked once and never refreshed in the background. */
+function AgentAnswer({ question, onDone }: { question: string; onDone: () => void }) {
+  const { t, locale } = useI18n();
+  const { property } = useSession();
+  const reply = useQuery({
+    queryKey: ['ask-agent', property?.id, locale, question],
+    queryFn: () => api.post<AgentReply>('/ask', { propertyId: property!.id, question, locale }),
+    enabled: Boolean(property),
+    retry: false,
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  if (reply.isLoading)
+    return (
+      <div className="flex items-center gap-3 text-sm text-muted">
+        <Spinner />
+        {t('ask.thinking')}
+      </div>
+    );
+  if (reply.error || !reply.data) {
+    const limit = reply.error instanceof ApiError && reply.error.code === 'AI_LIMIT';
+    return (
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-muted">{t(limit ? 'ask.agentLimit' : 'ask.agentDown')}</p>
+        <Answer question={question} onDone={onDone} />
+      </div>
+    );
+  }
+  const r = reply.data;
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-base whitespace-pre-wrap">{r.answer}</p>
+      {r.stays.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {r.stays.map((s) => (
+            <Row
+              key={s.id}
+              href={`/reservations/${s.id}`}
+              onDone={onDone}
+              icon={s.room ?? <ClipboardList size={18} aria-hidden />}
+              title={s.guestName ?? s.code ?? t('ask.reservations')}
+              sub={s.code ?? undefined}
+            />
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-muted">
+        {r.tools.length > 0 && `${t('ask.checked', { list: r.tools.map((k) => t(`ask.tools.${k}`)).join(', ') })} `}
+        {t('ask.agentNote')}
+      </p>
+    </div>
   );
 }
 
