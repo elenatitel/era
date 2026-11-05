@@ -3,11 +3,14 @@
   "components": [
     "db",
     "api",
-    "web"
+    "web",
+    "doorkey-db",
+    "doorkey-manager"
   ],
   "publish_jobs": [
     "Build api",
     "Build web",
-    "Publish CloudNativePG database chart"
+    "Publish CloudNativePG database chart",
+    "Build doorkey-manager"
   ]
 }

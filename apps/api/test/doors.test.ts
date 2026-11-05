@@ -63,6 +63,7 @@ before(async () => {
   await runMigrations(db.ownerUrl, db.appUrl, fileURLToPath(new URL('../../drizzle', import.meta.url)));
   Object.assign(process.env, {
     NODE_ENV: 'test',
+    LEGACY_DOOR_ACCESS: 'true',
     AUTH_PROVIDER: 'local',
     DATABASE_URL: db.appUrl,
     JWT_SECRET: randomBytes(32).toString('hex'),

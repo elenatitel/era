@@ -835,3 +835,12 @@ export const doorDevices = pgTable('door_devices', {
   lastUsedAt: timestamp({ withTimezone: true }),
   createdAt: createdAt(),
 });
+
+/** ERA is the authority for reservation eligibility; Manager holds cryptographic permits. */
+export const doorkeyAccess = pgTable('doorkey_access', {
+ reservationId: uuid().primaryKey().references(() => reservations.id,{onDelete:'cascade'}),
+ tenantId: tenantId(),
+ roomId: uuid().notNull().references(() => rooms.id,{onDelete:'cascade'}),
+ version: integer().notNull().default(1),
+ enabled: boolean().notNull().default(true),
+});

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: era-doorkey-manager
+description: DoorKey issuer and online BLE authorization service
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

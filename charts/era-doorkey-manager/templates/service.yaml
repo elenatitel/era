@@ -1,0 +1,88 @@
+{{- $image := printf "%s@%s" .Values.image.repository .Values.image.digest -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  selector: {app.kubernetes.io/name: doorkey-manager}
+  ports: [{name: http, port: 4001, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels: {app.kubernetes.io/name: doorkey-manager}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: doorkey-manager}
+      annotations:
+        checksum/values: {{ .Values | toJson | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets: {{ .Values.imagePullSecrets | toJson }}
+      nodeSelector: {{ .Values.nodeSelector | toJson }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: migrate
+          image: {{ $image | quote }}
+          command: [node, dist/migrate.js]
+          env:
+            - name: DATABASE_MIGRATION_URL
+              valueFrom: {secretKeyRef: {name: {{ .Values.existingSecret }}, key: DATABASE_MIGRATION_URL}}
+            - name: DATABASE_URL
+              valueFrom: {secretKeyRef: {name: {{ .Values.existingSecret }}, key: DATABASE_URL}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+      containers:
+        - name: doorkey-manager
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{name: http, containerPort: 4001}]
+          env:
+            - {name: PUBLIC_URL, value: {{ .Values.publicUrl | quote }}}
+            - {name: ERA_VALIDATION_URL, value: {{ .Values.eraValidationUrl | quote }}}
+            - {name: TRUST_PROXY, value: {{ .Values.trustProxy | quote }}}
+            - name: DATABASE_URL
+              valueFrom: {secretKeyRef: {name: {{ .Values.existingSecret }}, key: DATABASE_URL}}
+            - name: ISSUER_PRIVATE_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.existingSecret }}, key: ISSUER_PRIVATE_KEY}}
+            - name: SERVICE_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ .Values.existingSecret }}, key: SERVICE_TOKEN}}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /v1/config, port: http}
+            periodSeconds: 20
+          resources: {{ .Values.resources | toJson }}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+{{- if .Values.route.enabled }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  parentRefs:
+    - name: {{ .Values.route.gatewayName }}
+      namespace: {{ .Values.route.gatewayNamespace }}
+      sectionName: {{ .Values.route.sectionName }}
+  hostnames: [{{ .Values.route.hostname | quote }}]
+  rules:
+    # Never expose the service-authenticated management API through the public gateway.
+    - matches:
+        - path: {type: PathPrefix, value: /v1}
+        - path: {type: Exact, value: /enroll}
+      backendRefs:
+        - {name: {{ .Release.Name }}, port: 4001}
+{{- end }}

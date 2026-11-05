@@ -1,0 +1,21 @@
+image:
+  repository: harbor.cloud.retreat480.com/era/doorkey-manager
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  pullPolicy: IfNotPresent
+replicas: 1
+existingSecret: era-doorkey-credentials
+publicUrl: https://doorkey-staging.cloud.retreat480.com
+eraValidationUrl: http://era-api:4000/api/internal/doorkey/validate
+trustProxy: 1
+route:
+  enabled: true
+  hostname: doorkey-staging.cloud.retreat480.com
+  gatewayName: traefik-gateway
+  gatewayNamespace: traefik
+  sectionName: web
+imagePullSecrets:
+  - name: harbor-era-pull
+resources:
+  requests: {cpu: 50m, memory: 96Mi}
+  limits: {cpu: "1", memory: 256Mi}
+nodeSelector: {}

@@ -1,3 +1,4 @@
+import { DoorKeyModule } from './doorkey/doorkey.module.js';
 import { DoorsModule } from './doors/doors.module.js';
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
@@ -40,6 +41,7 @@ import { TenantModule } from './tenant/tenant.module.js';
     DashboardModule,
     BookingModule,
     DoorsModule,
+    DoorKeyModule,
     HealthModule,
   ],
   providers: [

@@ -1,5 +1,6 @@
 import {
   Injectable,
+  GoneException,
   NotFoundException,
   HttpException,
   UnauthorizedException,
@@ -71,6 +72,7 @@ export class DoorsService {
     private readonly audit: AuditService,
     private readonly ha: HomeAssistantService,
   ) {}
+  private legacy() { if (!config().LEGACY_DOOR_ACCESS) throw new GoneException('Browser PIN access has been replaced by DoorKey'); }
   private pinMac(roomId: string, pin: string) {
     return createHmac('sha256', Buffer.from(config().ENCRYPTION_KEY, 'base64'))
       .update(`era:door-pin:v1:${roomId}:${pin}`)
@@ -104,6 +106,7 @@ export class DoorsService {
     return config().WEB_ORIGIN + '/door/' + id;
   }
   integration(propertyId: string) {
+    this.legacy();
     return this.db.tenant(async (tx) => {
       await getAccessibleProperty(tx, propertyId);
       const [row] = await tx.select().from(doorIntegrations).where(eq(doorIntegrations.propertyId, propertyId));
@@ -115,6 +118,7 @@ export class DoorsService {
     });
   }
   saveIntegration(propertyId: string, input: { url: string; enabled: boolean; token?: string }) {
+    this.legacy();
     return this.db.tenant(async (tx) => {
       await getAccessibleProperty(tx, propertyId);
       const [old] = await tx.select().from(doorIntegrations).where(eq(doorIntegrations.propertyId, propertyId));
@@ -147,6 +151,7 @@ export class DoorsService {
     });
   }
   async testIntegration(propertyId: string) {
+    this.legacy();
     const row = await this.db.tenant(async (tx) => {
       await getAccessibleProperty(tx, propertyId);
       const [row] = await tx.select().from(doorIntegrations).where(eq(doorIntegrations.propertyId, propertyId));
@@ -157,6 +162,7 @@ export class DoorsService {
     return { message: 'Connection successful. No door command was sent.' };
   }
   roomConfig(roomId: string) {
+    this.legacy();
     return this.db.tenant(async (tx) => {
       await this.room(tx, roomId);
       const [cfg] = await tx.select().from(doorRooms).where(eq(doorRooms.roomId, roomId));
@@ -173,6 +179,7 @@ export class DoorsService {
     });
   }
   saveRoom(roomId: string, input: { entityId: string; enabled: boolean }) {
+    this.legacy();
     return this.db.tenant(async (tx) => {
       await this.room(tx, roomId);
       const [old] = await tx.select().from(doorRooms).where(eq(doorRooms.roomId, roomId)).for('update');
@@ -195,6 +202,7 @@ export class DoorsService {
     });
   }
   access(reservationId: string) {
+    this.legacy();
     return this.db.tenant(async (tx) => {
       const { r } = await this.reservation(tx, reservationId);
       const [grant] = await tx.select().from(doorGrants).where(eq(doorGrants.reservationId, r.id));
@@ -225,6 +233,7 @@ export class DoorsService {
     });
   }
   issue(reservationId: string) {
+    this.legacy();
     return this.db.tenant(async (tx) => {
       const { r } = await this.reservation(tx, reservationId);
       if (!r.roomId || !['confirmed', 'checked_in'].includes(r.status))
@@ -274,6 +283,7 @@ export class DoorsService {
     });
   }
   revoke(reservationId: string, deviceId?: string) {
+    this.legacy();
     return this.db.tenant(async (tx) => {
       const { r } = await this.reservation(tx, reservationId);
       const [g] = await tx.select().from(doorGrants).where(eq(doorGrants.reservationId, r.id));
@@ -319,6 +329,7 @@ export class DoorsService {
         .where(sql`${doorRateLimits.bucket} < ${Math.floor(Date.now() / 60_000) - 2}`);
   }
   private async publicRoute(publicId: string, req: Request) {
+    this.legacy();
     await this.rate('door:ip:' + (req.ip ?? 'unknown'), 60);
     const [row] = await this.db.db
       .select({ tenantId: doorRoutes.tenantId, roomId: doorRoutes.roomId })
