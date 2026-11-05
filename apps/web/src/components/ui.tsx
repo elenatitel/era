@@ -289,9 +289,10 @@ export function Spinner() {
 }
 
 /** Sunlit KPI tile: a big number; `highlight` paints the one tile that matters most in sun. */
-export function Stat({ label, value, hint, icon, highlight }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode; highlight?: boolean }) {
-  return (
-    <div className={clsx('flex min-h-31 flex-col justify-between gap-4 rounded-[22px] px-[18px] py-4', highlight ? 'bg-sun text-on-sun' : 'bg-surface text-ink')}>
+export function Stat({ label, value, hint, icon, highlight, href }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode; highlight?: boolean; href?: string }) {
+  const className = clsx('flex min-h-31 flex-col justify-between gap-4 rounded-[22px] px-[18px] py-4', highlight ? 'bg-sun text-on-sun' : 'bg-surface text-ink', href && 'transition hover:-translate-y-0.5');
+  const content = (
+    <>
       <div className="flex items-center justify-between gap-2">
         <p className={clsx('text-[13px]', highlight ? 'text-on-sun' : 'text-muted')}>{label}</p>
         {icon && <div className={clsx('rounded-full p-2', highlight ? 'bg-on-sun/10' : 'bg-subtle text-accent')}>{icon}</div>}
@@ -300,8 +301,9 @@ export function Stat({ label, value, hint, icon, highlight }: { label: string; v
         <p className="text-[40px] leading-[42px] font-medium tracking-[-0.03em] tabular-nums">{value}</p>
         {hint && <p className={clsx('pb-1 text-xs', highlight ? 'text-on-sun' : 'text-muted')}>{hint}</p>}
       </div>
-    </div>
+    </>
   );
+  return href ? <Link href={href} className={className}>{content}</Link> : <div className={className}>{content}</div>;
 }
 
 export function Tabs<T extends string>({ value, onChange, items }: { value: T; onChange: (v: T) => void; items: { value: T; label: ReactNode }[] }) {
