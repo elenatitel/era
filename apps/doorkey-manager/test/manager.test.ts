@@ -105,7 +105,7 @@ before(async () => {
         s.version !== version
       )
         throw Object.assign(new Error("Denied"), { status: 401 });
-      return { validUntil: until };
+      return { validUntil: until, roomName: "204", propertyName: "Retreat", timezone: "Europe/Bucharest" };
     },
   });
   server = app.listen(0, "127.0.0.1");
@@ -168,6 +168,7 @@ test("single-use QR binds a signed permit to the phone key, with proof of posses
   assert.equal((await req("/v1/redeem", bad, false)).status, 401);
   const redeemed = await req("/v1/redeem", redemption(t), false);
   assert.equal(redeemed.status, 200, JSON.stringify(redeemed.body));
+  assert.deepEqual(redeemed.body.room, { name: "204", propertyName: "Retreat", timezone: "Europe/Bucharest" });
   encoded = redeemed.body.permit;
   deviceId = redeemed.body.deviceId;
   const bytes = Buffer.from(encoded, "base64");

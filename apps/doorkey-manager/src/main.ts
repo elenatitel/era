@@ -43,7 +43,7 @@ const app = createManager({
         status: r.status === 401 ? 401 : 503,
       });
     return z
-      .object({ validUntil: z.number().int().positive() })
+      .object({ validUntil: z.number().int().positive(), roomName: z.string().max(200).optional(), propertyName: z.string().max(200).optional(), timezone: z.string().max(100).optional() })
       .parse(await r.json());
   },
 });
