@@ -162,6 +162,9 @@ const en = {
     breakfast: '{n} guests for breakfast tomorrow', breakfastHint: 'Guests staying tonight on a rate or package with breakfast.',
     results: 'Results for “{q}”', noResults: 'Nothing found for “{q}”.', rooms: 'Rooms', reservations: 'Reservations', guests: 'Guests',
     leaves: 'leaves {date}', shortcut: 'Ctrl K', ask: 'Ask', close: 'Close', noAccess: 'Your role cannot see this.',
+    hintAgent: 'Ask anything about your hotel, or try one:', thinking: 'era. is checking the hotel…', checked: 'Checked {list}.',
+    agentNote: 'AI answer: check it before you act on it. era. can only read. Guest names reach the AI only if you type them in the question.', agentDown: 'era. cannot answer that right now. Here is what a search finds:', agentLimit: 'The daily limit of AI questions is reached. Here is what a search finds:',
+    tools: { hotel_overview: 'the overview', rooms_today: 'rooms', arrivals_today: 'arrivals', close_of_day: 'the close of day', find_stays: 'reservations', stay_details: 'the stay', availability: 'availability' },
   },
   house: {
     title: '{property}, <em>right now</em>', summary: '{occupied} rooms lit · {ready} ready for arrivals · {dirty} to clean',
@@ -420,6 +423,9 @@ const ro: DeepPartial<Dict> = {
     breakfast: '{n} oaspeți la micul dejun mâine', breakfastHint: 'Oaspeții cazați în noaptea asta pe un tarif sau pachet cu mic dejun.',
     results: 'Rezultate pentru „{q}”', noResults: 'Nimic găsit pentru „{q}”.', rooms: 'Camere', reservations: 'Rezervări', guests: 'Oaspeți',
     leaves: 'pleacă {date}', shortcut: 'Ctrl K', ask: 'Întreabă', close: 'Închide', noAccess: 'Rolul tău nu are acces la asta.',
+    hintAgent: 'Întreabă orice despre hotelul tău sau încearcă una:', thinking: 'era. verifică hotelul…', checked: 'A verificat {list}.',
+    agentNote: 'Răspuns AI: verifică-l înainte să acționezi. era. doar citește. Numele oaspeților ajung la AI doar dacă le scrii în întrebare.', agentDown: 'era. nu poate răspunde acum. Iată ce găsește o căutare:', agentLimit: 'S-a atins limita zilnică de întrebări AI. Iată ce găsește o căutare:',
+    tools: { hotel_overview: 'situația hotelului', rooms_today: 'camerele', arrivals_today: 'sosirile', close_of_day: 'închiderea de zi', find_stays: 'rezervările', stay_details: 'rezervarea', availability: 'disponibilitatea' },
   },
   house: {
     title: '{property}, <em>chiar acum</em>', summary: '{occupied} camere aprinse · {ready} pregătite pentru sosiri · {dirty} de curățat',

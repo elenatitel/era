@@ -164,5 +164,5 @@ export class DashboardController {
   }
 }
 
-@Module({ controllers: [DashboardController], providers: [DashboardService, LiveService] })
+@Module({ controllers: [DashboardController], providers: [DashboardService, LiveService], exports: [DashboardService, LiveService] })
 export class DashboardModule {}
