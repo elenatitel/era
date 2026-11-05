@@ -1,9 +1,9 @@
 {
-  "id": 42088846807,
-  "run_number": 38,
+  "id": 42104397121,
+  "run_number": 40,
   "run_attempt": 1,
-  "head_sha": "e88950fd284c2cfd3091ca96d7ecd23834a58ad4",
-  "head_branch": "feature/doorkey-manager",
-  "html_url": "https://github.com/elenatitel/era/actions/runs/42088846807",
-  "version": "0.1.0-ci.38.1"
+  "head_sha": "4ca8e7bb7b9698f22de1039d3fd46f80a31b67cf",
+  "head_branch": "feature/doorkey-wallet-metadata",
+  "html_url": "https://github.com/elenatitel/era/actions/runs/42104397121",
+  "version": "0.1.0-ci.40.1"
 }
