@@ -1,9 +1,9 @@
 {
-  "id": 41998951061,
-  "run_number": 33,
+  "id": 42064094999,
+  "run_number": 35,
   "run_attempt": 1,
-  "head_sha": "4a08aa471644b38d749f18f376816869027de466",
-  "head_branch": "feature/dashboard-turnover",
-  "html_url": "https://github.com/elenatitel/era/actions/runs/41998951061",
-  "version": "0.1.0-ci.33.1"
+  "head_sha": "6e7772236e975238e2a776912eaa54df2176cd2a",
+  "head_branch": "feature/ask-era-agent",
+  "html_url": "https://github.com/elenatitel/era/actions/runs/42064094999",
+  "version": "0.1.0-ci.35.1"
 }
